@@ -35,4 +35,31 @@ router.post('/tick', (req, res) => {
   return res.status(201).json({ tick });
 });
 
+router.get('/level2/:symbol', (req, res) => {
+  const { symbol } = req.params;
+  const tick = marketSnapshots.find(t => t.symbol === symbol);
+  if (!tick) return res.status(404).json({ error: `Symbol ${symbol} not found` });
+  const level2Data = {
+    symbol: symbol,
+    timestamp: new Date().toISOString(),
+    bids: [
+      { price: tick.bid, size: Math.floor(Math.random() * 100) + 10 },
+      { price: tick.bid - 0.01, size: Math.floor(Math.random() * 80) + 15 },
+      { price: tick.bid - 0.02, size: Math.floor(Math.random() * 60) + 20 },
+      { price: tick.bid - 0.03, size: Math.floor(Math.random() * 50) + 25 },
+      { price: tick.bid - 0.04, size: Math.floor(Math.random() * 40) + 30 }
+    ],
+    asks: [
+      { price: tick.ask, size: Math.floor(Math.random() * 100) + 10 },
+      { price: tick.ask + 0.01, size: Math.floor(Math.random() * 80) + 15 },
+      { price: tick.ask + 0.02, size: Math.floor(Math.random() * 60) + 20 },
+      { price: tick.ask + 0.03, size: Math.floor(Math.random() * 50) + 25 },
+      { price: tick.ask + 0.04, size: Math.floor(Math.random() * 40) + 30 }
+    ],
+    spread: (tick.ask - tick.bid).toFixed(6),
+    volume: tick.volume
+  };
+  res.json(level2Data);
+});
+
 module.exports = router;
