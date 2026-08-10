@@ -59,6 +59,7 @@ app.get('/api/enterprise/status', (req, res) => {
 seedData();
 
 app.use('/api/auth', authRoutes);
+app.use('/api/ea', require('./routes/ea'));
 app.use('/api/accounts', accountRoutes);
 app.use('/api/brokers', brokerRoutes);
 app.use('/api/strategies', strategyRoutes);
