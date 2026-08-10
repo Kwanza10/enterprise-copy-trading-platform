@@ -6,6 +6,7 @@ module.exports = {
   port: Number(process.env.PORT || 3000),
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+  credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY || 'dev-credential-key-change-me',
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT || 5432),

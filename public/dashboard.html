@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BrokersSync &mdash; Binance Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #131a24;
+    --border: #223044;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+  header .status {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 32px 64px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .connect-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: end;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    padding: 9px 10px;
+    background: #0e1420;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .field.checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+  .field.checkbox input { width: auto; }
+  button {
+    padding: 10px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .message {
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .message.error { color: var(--red); }
+  .message.success { color: var(--green); }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .card .label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  .card .value {
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  .empty-state {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 12px 0;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>BrokersSync &mdash; Binance Performance Dashboard</h1>
+  <div class="status" id="refreshStatus">Not connected</div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Connect Account</h2>
+    <div class="connect-form">
+      <div class="field">
+        <label for="jwtToken">Auth Token</label>
+        <input id="jwtToken" type="password" placeholder="Bearer token from /api/auth/login" />
+      </div>
+      <div class="field">
+        <label for="apiKey">Binance API Key</label>
+        <input id="apiKey" type="password" placeholder="API key" />
+      </div>
+      <div class="field">
+        <label for="apiSecret">Binance API Secret</label>
+        <input id="apiSecret" type="password" placeholder="API secret" />
+      </div>
+      <div class="field">
+        <label for="symbol">Symbol</label>
+        <input id="symbol" type="text" value="BTCUSDT" />
+      </div>
+      <div class="field checkbox">
+        <input id="testnet" type="checkbox" checked />
+        <label for="testnet" style="margin:0;">Use Testnet</label>
+      </div>
+      <div class="field">
+        <button id="connectBtn">Connect</button>
+      </div>
+    </div>
+    <div class="message" id="connectMessage"></div>
+  </section>
+
+  <section class="cards">
+    <div class="card">
+      <div class="label">Total P&amp;L</div>
+      <div class="value" id="metricPnl">--</div>
+    </div>
+    <div class="card">
+      <div class="label">Win Rate</div>
+      <div class="value" id="metricWinRate">--</div>
+    </div>
+    <div class="card">
+      <div class="label">Total Trades</div>
+      <div class="value" id="metricTradeCount">--</div>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:20px;">
+    <h2>Recent Trades</h2>
+    <div id="tradesContainer" class="empty-state">Connect an account to load trade history.</div>
+  </section>
+</main>
+
+<script>
+  const REFRESH_INTERVAL_MS = 5000;
+  let refreshTimer = null;
+
+  const el = {
+    jwtToken: document.getElementById('jwtToken'),
+    apiKey: document.getElementById('apiKey'),
+    apiSecret: document.getElementById('apiSecret'),
+    symbol: document.getElementById('symbol'),
+    testnet: document.getElementById('testnet'),
+    connectBtn: document.getElementById('connectBtn'),
+    connectMessage: document.getElementById('connectMessage'),
+    refreshStatus: document.getElementById('refreshStatus'),
+    metricPnl: document.getElementById('metricPnl'),
+    metricWinRate: document.getElementById('metricWinRate'),
+    metricTradeCount: document.getElementById('metricTradeCount'),
+    tradesContainer: document.getElementById('tradesContainer')
+  };
+
+  const storedToken = localStorage.getItem('brokerssync_token');
+  if (storedToken) el.jwtToken.value = storedToken;
+
+  function setMessage(text, kind) {
+    el.connectMessage.textContent = text;
+    el.connectMessage.className = 'message' + (kind ? ' ' + kind : '');
+  }
+
+  function authHeaders() {
+    return { Authorization: 'Bearer ' + el.jwtToken.value.trim() };
+  }
+
+  function formatMoney(value) {
+    const n = Number(value) || 0;
+    const sign = n > 0 ? '+' : '';
+    return sign + '$' + n.toFixed(2);
+  }
+
+  async function connect() {
+    const token = el.jwtToken.value.trim();
+    const apiKey = el.apiKey.value.trim();
+    const apiSecret = el.apiSecret.value.trim();
+
+    if (!token || !apiKey || !apiSecret) {
+      setMessage('Auth token, API key, and API secret are all required.', 'error');
+      return;
+    }
+
+    el.connectBtn.disabled = true;
+    setMessage('Connecting...', '');
+
+    try {
+      const res = await fetch('/api/binance/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ apiKey, apiSecret, testnet: el.testnet.checked })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage(data.error || 'Failed to connect.', 'error');
+        return;
+      }
+
+      localStorage.setItem('brokerssync_token', token);
+      setMessage('Connected' + (data.testnet ? ' (testnet)' : '') + '.', 'success');
+      el.apiKey.value = '';
+      el.apiSecret.value = '';
+      startAutoRefresh();
+    } catch (err) {
+      setMessage('Network error while connecting.', 'error');
+    } finally {
+      el.connectBtn.disabled = false;
+    }
+  }
+
+  function renderTrades(trades) {
+    if (!trades || trades.length === 0) {
+      el.tradesContainer.innerHTML = '';
+      el.tradesContainer.className = 'empty-state';
+      el.tradesContainer.textContent = 'No trades found for this symbol.';
+      return;
+    }
+
+    const rows = trades.slice(-25).reverse().map((t) => {
+      const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
+      return '<tr>' +
+        '<td>' + t.symbol + '</td>' +
+        '<td>' + t.quantity + '</td>' +
+        '<td>' + t.entryPrice + '</td>' +
+        '<td>' + t.exitPrice + '</td>' +
+        '<td class="' + pnlClass + '">' + formatMoney(t.pnl) + '</td>' +
+        '<td>' + new Date(t.exitDate).toLocaleString() + '</td>' +
+        '</tr>';
+    }).join('');
+
+    el.tradesContainer.className = '';
+    el.tradesContainer.innerHTML =
+      '<table><thead><tr>' +
+      '<th>Symbol</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Closed</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  async function refresh() {
+    const token = el.jwtToken.value.trim();
+    const symbol = el.symbol.value.trim();
+    if (!token || !symbol) return;
+
+    try {
+      const [metricsRes, tradesRes] = await Promise.all([
+        fetch('/api/binance/metrics?symbol=' + encodeURIComponent(symbol), { headers: authHeaders() }),
+        fetch('/api/binance/trades?symbol=' + encodeURIComponent(symbol), { headers: authHeaders() })
+      ]);
+
+      if (metricsRes.status === 401) {
+        el.refreshStatus.textContent = 'Session expired, reconnect.';
+        stopAutoRefresh();
+        return;
+      }
+
+      const metricsData = await metricsRes.json();
+      const tradesData = await tradesRes.json();
+
+      if (metricsRes.ok) {
+        const m = metricsData.metrics;
+        el.metricPnl.textContent = formatMoney(m.totalPnl);
+        el.metricPnl.className = 'value ' + (m.totalPnl >= 0 ? 'positive' : 'negative');
+        el.metricWinRate.textContent = m.winRate.toFixed(1) + '%';
+        el.metricTradeCount.textContent = m.totalTrades;
+      }
+
+      if (tradesRes.ok) {
+        renderTrades(tradesData.trades);
+      }
+
+      el.refreshStatus.textContent = 'Last updated ' + new Date().toLocaleTimeString();
+    } catch (err) {
+      el.refreshStatus.textContent = 'Refresh failed, retrying...';
+    }
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    refresh();
+    refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  el.connectBtn.addEventListener('click', connect);
+
+  if (storedToken) startAutoRefresh();
+</script>
+</body>
+</html>
