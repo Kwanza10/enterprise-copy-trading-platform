@@ -4,6 +4,7 @@ const cipher = require('../lib/credentialCipher');
 
 const PLATFORMS = ['mt4', 'mt5', 'tradelocker', 'ninjatrader'];
 const ROLES = ['master', 'follower', 'both'];
+const ENVIRONMENTS = ['demo', 'live'];
 
 function hashToken(rawToken) {
   return crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -15,20 +16,24 @@ function toPublicDTO(row) {
     userId: row.user_id,
     platform: row.platform,
     role: row.role,
-    accountLabel: row.account_label,
+    label: row.label,
+    environment: row.environment,
     balance: Number(row.balance),
     status: row.status,
     createdAt: row.created_at,
-    lastSyncAt: row.last_sync_at
+    updatedAt: row.updated_at
   };
 }
 
-async function createBrokerAccount({ userId, platform, role, accountLabel, credentials, balance }) {
+async function createBrokerAccount({ userId, platform, role, label, environment, credentials, balance }) {
   if (!PLATFORMS.includes(platform)) {
     throw new Error(`platform must be one of: ${PLATFORMS.join(', ')}`);
   }
   if (role && !ROLES.includes(role)) {
     throw new Error(`role must be one of: ${ROLES.join(', ')}`);
+  }
+  if (environment && !ENVIRONMENTS.includes(environment)) {
+    throw new Error(`environment must be one of: ${ENVIRONMENTS.join(', ')}`);
   }
   if (!credentials || typeof credentials !== 'object') {
     throw new Error('credentials object is required.');
@@ -36,14 +41,24 @@ async function createBrokerAccount({ userId, platform, role, accountLabel, crede
 
   const id = crypto.randomUUID();
   const webhookToken = crypto.randomBytes(24).toString('hex');
-  const encryptedCredentials = cipher.encrypt(credentials);
+  const credentialsEncrypted = cipher.encrypt(credentials);
 
   const result = await db.query(
     `INSERT INTO broker_accounts
-       (id, user_id, platform, role, account_label, encrypted_credentials, webhook_token_hash, balance, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+       (id, user_id, platform, role, label, credentials_encrypted, webhook_token_hash, environment, balance, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
      RETURNING *`,
-    [id, userId, platform, role || 'both', accountLabel || null, encryptedCredentials, hashToken(webhookToken), balance || 0]
+    [
+      id,
+      userId,
+      platform,
+      role || 'both',
+      label || null,
+      credentialsEncrypted,
+      hashToken(webhookToken),
+      environment || 'demo',
+      balance || 0
+    ]
   );
 
   return { account: toPublicDTO(result.rows[0]), webhookToken };
@@ -70,22 +85,37 @@ async function getBrokerAccountByWebhookToken(rawToken) {
   return result.rows[0] || null;
 }
 
-async function getDecryptedCredentials(accountRow) {
-  return cipher.decrypt(accountRow.encrypted_credentials);
+async function listAccountsByPlatformAndRole(platform, role) {
+  const result = await db.query(
+    `SELECT * FROM broker_accounts WHERE platform = $1 AND role IN ($2, 'both') AND status = 'active'`,
+    [platform, role]
+  );
+  return result.rows;
 }
 
-async function touchLastSync(accountId) {
-  await db.query(`UPDATE broker_accounts SET last_sync_at = NOW() WHERE id = $1`, [accountId]);
+function getDecryptedCredentials(accountRow) {
+  return cipher.decrypt(accountRow.credentials_encrypted);
+}
+
+async function updateStatus(accountId, status) {
+  await db.query(`UPDATE broker_accounts SET status = $1, updated_at = NOW() WHERE id = $2`, [status, accountId]);
+}
+
+async function updateBalance(accountId, balance) {
+  await db.query(`UPDATE broker_accounts SET balance = $1, updated_at = NOW() WHERE id = $2`, [balance, accountId]);
 }
 
 module.exports = {
   PLATFORMS,
   ROLES,
+  ENVIRONMENTS,
   createBrokerAccount,
   listBrokerAccountsForUser,
   getBrokerAccountRowById,
   getBrokerAccountByWebhookToken,
+  listAccountsByPlatformAndRole,
   getDecryptedCredentials,
-  touchLastSync,
+  updateStatus,
+  updateBalance,
   toPublicDTO
 };

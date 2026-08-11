@@ -23,6 +23,15 @@ const transferRoutes = require('./routes/transfers');
 const settlementRoutes = require('./routes/settlements');
 const redisRoutes = require('./routes/redis');
 const aiAssistantRoutes = require('./routes/ai-assistant');
+const brokerAccountRoutes = require('./routes/broker-accounts');
+const copyRelationshipRoutes = require('./routes/copy-relationships');
+const symbolMappingRoutes = require('./routes/symbol-mappings');
+const webhookRoutes = require('./routes/webhook');
+const tradeFeedRoutes = require('./routes/trade-feed');
+const tradeQueue = require('./lib/tradeQueue');
+const copyEngine = require('./services/copyEngine');
+const symbolMappingService = require('./services/symbolMappingService');
+const tradeLockerPoller = require('./services/tradeLockerPoller');
 const { buildSystemHealth } = require('./services/systemHealth');
 
 const app = express();
@@ -78,7 +87,23 @@ app.use('/api/transfers', transferRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/redis', redisRoutes);
 app.use('/api/ai-assistant', aiAssistantRoutes);
+app.use('/api/broker-accounts', brokerAccountRoutes);
+app.use('/api/copy-relationships', copyRelationshipRoutes);
+app.use('/api/symbol-mappings', symbolMappingRoutes);
+app.use('/api/webhook', webhookRoutes);
+app.use('/api/trade-feed', tradeFeedRoutes);
 
 const wsServer = createWebSocketServer(server);
+
+tradeQueue.setProcessor(copyEngine.processTradeEvent);
+
+// DB-dependent startup work - never let a missing/unreachable Postgres
+// (e.g. local dev with no DB_* env vars set) crash the whole process.
+symbolMappingService.seedGlobalDefaults().catch((error) => {
+  console.error('Symbol mapping seed skipped (DB unavailable?):', error.message);
+});
+tradeLockerPoller.start().catch((error) => {
+  console.error('TradeLocker poller failed to start:', error.message);
+});
 
 module.exports = { app, server, wsServer };
