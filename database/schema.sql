@@ -78,3 +78,84 @@ CREATE TABLE IF NOT EXISTS admin_alerts (
   acknowledged BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Webhook-based copy-trading hub (MT4/MT5/TradeLocker/NinjaTrader).
+-- Note: "copy_relationships" and "trade_events" table names are already taken
+-- above by the strategy-marketplace allocation feature (different shape,
+-- unrelated to raw broker-account trade mirroring), so this feature's
+-- relationship/event tables use distinct names below to avoid collision.
+
+CREATE TABLE IF NOT EXISTS broker_accounts (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id),
+  platform VARCHAR(20) NOT NULL CHECK (platform IN ('mt4', 'mt5', 'tradelocker', 'ninjatrader')),
+  role VARCHAR(20) NOT NULL DEFAULT 'both' CHECK (role IN ('master', 'follower', 'both')),
+  account_label VARCHAR(200),
+  encrypted_credentials TEXT NOT NULL,
+  webhook_token_hash VARCHAR(64) NOT NULL UNIQUE,
+  balance NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_sync_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_broker_accounts_user_id ON broker_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_broker_accounts_webhook_token_hash ON broker_accounts(webhook_token_hash);
+
+CREATE TABLE IF NOT EXISTS symbol_mappings (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  canonical_symbol VARCHAR(40) NOT NULL,
+  platform_symbol VARCHAR(40) NOT NULL,
+  platform VARCHAR(20) NOT NULL CHECK (platform IN ('mt4', 'mt5', 'tradelocker', 'ninjatrader')),
+  broker_name VARCHAR(100),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_symbol_mappings_lookup ON symbol_mappings(canonical_symbol, platform, user_id);
+
+CREATE TABLE IF NOT EXISTS trade_copy_relationships (
+  id UUID PRIMARY KEY,
+  master_account_id UUID NOT NULL REFERENCES broker_accounts(id),
+  follower_account_id UUID NOT NULL REFERENCES broker_accounts(id),
+  follower_user_id UUID NOT NULL REFERENCES users(id),
+  risk_mode VARCHAR(30) NOT NULL DEFAULT 'fixed_lot' CHECK (risk_mode IN ('fixed_lot', 'percent_of_master', 'percent_of_balance')),
+  risk_value NUMERIC(12, 4) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  commission_percent NUMERIC(5, 2) NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending_approval' CHECK (status IN ('pending_approval', 'active', 'rejected', 'cancelled')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_copy_relationships_master ON trade_copy_relationships(master_account_id);
+CREATE INDEX IF NOT EXISTS idx_copy_relationships_follower_user ON trade_copy_relationships(follower_user_id);
+
+CREATE TABLE IF NOT EXISTS webhook_trade_events (
+  id UUID PRIMARY KEY,
+  master_account_id UUID NOT NULL REFERENCES broker_accounts(id),
+  canonical_symbol VARCHAR(40) NOT NULL,
+  action VARCHAR(10) NOT NULL CHECK (action IN ('buy', 'sell', 'close')),
+  master_lot_size NUMERIC(12, 4),
+  price NUMERIC(14, 5),
+  source_timestamp TIMESTAMP WITH TIME ZONE,
+  status VARCHAR(20) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'queued', 'processing', 'completed', 'failed')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_trade_events_master ON webhook_trade_events(master_account_id);
+
+CREATE TABLE IF NOT EXISTS copy_executions (
+  id UUID PRIMARY KEY,
+  trade_event_id UUID NOT NULL REFERENCES webhook_trade_events(id),
+  follower_account_id UUID NOT NULL REFERENCES broker_accounts(id),
+  calculated_lot_size NUMERIC(12, 4),
+  mapped_symbol VARCHAR(40),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'executed', 'failed', 'stubbed')),
+  error_message TEXT,
+  executed_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_copy_executions_trade_event ON copy_executions(trade_event_id);
+CREATE INDEX IF NOT EXISTS idx_copy_executions_follower ON copy_executions(follower_account_id);

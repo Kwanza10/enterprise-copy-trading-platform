@@ -23,7 +23,6 @@ const transferRoutes = require('./routes/transfers');
 const settlementRoutes = require('./routes/settlements');
 const redisRoutes = require('./routes/redis');
 const aiAssistantRoutes = require('./routes/ai-assistant');
-const binanceRoutes = require('./routes/binance');
 const { buildSystemHealth } = require('./services/systemHealth');
 
 const app = express();
@@ -79,7 +78,6 @@ app.use('/api/transfers', transferRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/redis', redisRoutes);
 app.use('/api/ai-assistant', aiAssistantRoutes);
-app.use('/api/binance', binanceRoutes);
 
 const wsServer = createWebSocketServer(server);
 
