@@ -25,7 +25,12 @@ function positionHash(pos) {
 }
 
 function buildEvent(eventType, accountRow, pos, instrumentsByTLId) {
-  const instrument = instrumentsByTLId.get(pos.tradableInstrumentId);
+  const instrument = instrumentsByTLId.get(String(pos.tradableInstrumentId));
+  if (!instrument) {
+    console.warn(
+      `[tradeLockerPoller] account=${accountRow.id} could not resolve instrument name for tradableInstrumentId=${pos.tradableInstrumentId} - falling back to raw id as symbol, follower execution will fail to match it.`
+    );
+  }
   return {
     sourceAccountId: accountRow.id,
     eventType,
@@ -74,7 +79,11 @@ async function initAccountContext(accountRow) {
   const columnResolver = tradeLockerService.buildColumnResolver(config);
   console.log(`[tradeLockerPoller] account=${accountRow.id} resolved position columns:`, columnResolver);
   const instruments = await tradeLockerService.listInstruments(session, credentials.accountId, credentials.accNum);
-  const instrumentsByTLId = new Map(instruments.map((i) => [i.tradableInstrumentId, i]));
+  // Keyed by String(tradableInstrumentId): /instruments returns it as a JSON
+  // number but /positions' column-array rows aren't guaranteed to match that
+  // type, and Map key lookup is strict-equality - a silent type mismatch here
+  // was exactly what caused symbol resolution to fall back to the raw id.
+  const instrumentsByTLId = new Map(instruments.map((i) => [String(i.tradableInstrumentId), i]));
 
   const rateLimit = findRateLimit(config, ['POSITION']);
   const minGapMs = rateLimit ? Math.ceil(rateLimit.intervalMs / rateLimit.limit) : 0;
