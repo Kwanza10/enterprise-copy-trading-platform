@@ -68,6 +68,36 @@ async function listAccounts(session) {
   return payload.accounts || [];
 }
 
+// /trade/* endpoints require an accNum header identifying which of the
+// login's accounts to act on - TradeLocker's docs don't expose a "default
+// account" flag, so auto-picking is only safe when exactly one account
+// exists. With multiple, guessing wrong means trading on the wrong account,
+// so this fails closed and lists the choices instead of silently choosing.
+async function resolveAccountSelection(credentials, environment) {
+  if (credentials.accountId && credentials.accNum) {
+    return { accountId: credentials.accountId, accNum: credentials.accNum };
+  }
+
+  const session = await authenticate(credentials, environment);
+  const accounts = await listAccounts(session);
+  const active = accounts.filter((a) => a.status === 'ACTIVE');
+  const candidates = active.length > 0 ? active : accounts;
+
+  if (candidates.length === 0) {
+    throw new Error('No TradeLocker accounts found for these credentials.');
+  }
+  if (candidates.length > 1) {
+    const summary = candidates
+      .map((a) => `${a.name} (accountId=${a.id}, accNum=${a.accNum}, ${a.currency})`)
+      .join('; ');
+    throw new Error(
+      `Multiple TradeLocker accounts found - specify accountId and accNum explicitly. Available: ${summary}`
+    );
+  }
+
+  return { accountId: candidates[0].id, accNum: candidates[0].accNum };
+}
+
 async function listInstruments(session, accountId, accNum) {
   const data = await request(session.baseUrl, `/trade/accounts/${accountId}/instruments`, {
     accessToken: session.accessToken,
@@ -193,6 +223,7 @@ async function executeTrade({ credentials, environment, accountId, accNum, symbo
 module.exports = {
   authenticate,
   listAccounts,
+  resolveAccountSelection,
   listInstruments,
   resolveInstrument,
   placeMarketOrder,

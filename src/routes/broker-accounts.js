@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const brokerAccountService = require('../services/brokerAccountService');
+const tradeLockerService = require('../services/tradeLockerService');
 
 const router = express.Router();
 
@@ -14,13 +15,32 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    let resolvedCredentials = credentials;
+
+    // TradeLocker's /trade/* endpoints require an accNum header identifying
+    // which account to act on. Resolve it once here (via /auth/jwt/all-accounts)
+    // rather than requiring the caller to already know their numeric account
+    // number - see tradeLockerService.resolveAccountSelection for why this
+    // only auto-picks when unambiguous.
+    if (platform === 'tradelocker') {
+      try {
+        const { accountId, accNum } = await tradeLockerService.resolveAccountSelection(
+          credentials,
+          environment || 'demo'
+        );
+        resolvedCredentials = { ...credentials, accountId, accNum };
+      } catch (error) {
+        return res.status(400).json({ error: `TradeLocker account resolution failed: ${error.message}` });
+      }
+    }
+
     const { account, webhookToken } = await brokerAccountService.createBrokerAccount({
       userId: req.user.sub,
       platform,
       role,
       label,
       environment,
-      credentials,
+      credentials: resolvedCredentials,
       balance
     });
 
