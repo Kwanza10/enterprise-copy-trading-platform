@@ -72,6 +72,7 @@ async function initAccountContext(accountRow) {
   const session = await tradeLockerService.authenticate(credentials, accountRow.environment);
   const config = await tradeLockerService.getConfig(session, credentials.accNum);
   const columnResolver = tradeLockerService.buildColumnResolver(config);
+  console.log(`[tradeLockerPoller] account=${accountRow.id} resolved position columns:`, columnResolver);
   const instruments = await tradeLockerService.listInstruments(session, credentials.accountId, credentials.accNum);
   const instrumentsByTLId = new Map(instruments.map((i) => [i.tradableInstrumentId, i]));
 

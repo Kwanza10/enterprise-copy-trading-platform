@@ -159,29 +159,51 @@ async function getConfig(session, accNum) {
 // Positions/orders come back as column-index arrays; the field order is only
 // known via /trade/config's *Config.columns. Build a { fieldName -> index }
 // map once per config fetch, matching column ids against known candidate
-// names (TradeLocker's exact column id strings for size/sl/tp weren't fully
-// confirmable from docs alone, so this resolves defensively).
+// names. TradeLocker's exact column id strings couldn't be confirmed from
+// docs alone (no live response was reachable while building this), so
+// matching is normalized (strips spaces/underscores/case) and candidate
+// lists are intentionally broad - see resolveColumnIndex's thrown error and
+// the raw-columns log in getConfig callers for how a real mismatch surfaces.
 const FIELD_CANDIDATES = {
-  id: ['id', 'positionid'],
-  tradableInstrumentId: ['tradableinstrumentid', 'instrumentid'],
-  side: ['side'],
-  size: ['qty', 'size', 'volume'],
-  openPrice: ['openprice', 'price', 'avgprice'],
+  id: ['id', 'positionid', 'position', 'ticket', 'orderid'],
+  tradableInstrumentId: ['tradableinstrumentid', 'instrumentid', 'instrument'],
+  side: ['side', 'direction', 'buysell'],
+  size: ['qty', 'quantity', 'size', 'volume', 'lots', 'lotsize'],
+  openPrice: ['openprice', 'price', 'avgprice', 'averageprice', 'entryprice'],
   stopLoss: ['stoploss', 'sl'],
   takeProfit: ['takeprofit', 'tp'],
-  openDate: ['opendate', 'timestamp', 'opentime', 'createddate']
+  openDate: ['opendate', 'timestamp', 'opentime', 'createddate', 'createddate', 'date']
 };
+
+function normalizeColumnKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Fields a caller can't safely proceed without - if these don't resolve,
+// downstream position-diffing silently breaks (e.g. every position getting
+// the same undefined id) instead of failing visibly, so this throws instead.
+const REQUIRED_FIELDS = ['id', 'side', 'size'];
 
 function buildColumnResolver(columnsConfig) {
   const columns = (columnsConfig && columnsConfig.positionsConfig && columnsConfig.positionsConfig.columns) || [];
   const indexByField = {};
 
   for (const [field, candidates] of Object.entries(FIELD_CANDIDATES)) {
+    const normalizedCandidates = candidates.map(normalizeColumnKey);
     const idx = columns.findIndex((col) => {
-      const id = String(col.id || col.field || col.title || '').toLowerCase();
-      return candidates.includes(id);
+      const key = normalizeColumnKey(col.id || col.field || col.title || col.name || '');
+      return normalizedCandidates.includes(key);
     });
     if (idx >= 0) indexByField[field] = idx;
+  }
+
+  const missingRequired = REQUIRED_FIELDS.filter((field) => indexByField[field] === undefined);
+  if (missingRequired.length > 0) {
+    const rawColumns = columns.map((c) => c.id || c.field || c.title || c.name || JSON.stringify(c));
+    throw new Error(
+      `TradeLocker positionsConfig column resolution failed for: ${missingRequired.join(', ')}. ` +
+      `Raw columns from /trade/config: [${rawColumns.join(', ')}]. Update FIELD_CANDIDATES in tradeLockerService.js to match.`
+    );
   }
 
   return indexByField;
