@@ -70,6 +70,29 @@ async function findOpenEventByExternalId(sourceAccountId, externalPositionId) {
   return result.rows[0] ? toDTO(result.rows[0]) : null;
 }
 
+// Webhook bridges (MT4/5 EAs) retry on timeout/connection-reset without any
+// idempotency key of their own, so the same position event can arrive twice.
+// A duplicate is the same master position reporting the same state again
+// within a short window - matched on the fields that would otherwise cause
+// it to be re-copied (or re-closed) to followers a second time.
+async function findRecentDuplicate({ sourceAccountId, eventType, externalPositionId, side, size, sl, tp, windowMs = 15000 }) {
+  const result = await db.query(
+    `SELECT * FROM copy_trade_events
+     WHERE source_account_id = $1
+       AND event_type = $2
+       AND external_position_id = $3
+       AND side IS NOT DISTINCT FROM $4
+       AND size IS NOT DISTINCT FROM $5
+       AND sl IS NOT DISTINCT FROM $6
+       AND tp IS NOT DISTINCT FROM $7
+       AND received_at >= NOW() - ($8 || ' milliseconds')::interval
+     ORDER BY received_at DESC
+     LIMIT 1`,
+    [sourceAccountId, eventType, externalPositionId, side || null, size ?? null, sl ?? null, tp ?? null, windowMs]
+  );
+  return result.rows[0] ? toDTO(result.rows[0]) : null;
+}
+
 async function updateStatus(id, status) {
   await db.query(`UPDATE copy_trade_events SET status = $1 WHERE id = $2`, [status, id]);
 }
@@ -86,4 +109,11 @@ async function listRecentForUser(userId, limit = 50) {
   return result.rows.map(toDTO);
 }
 
-module.exports = { createTradeEvent, updateStatus, listRecentForUser, findOpenEventByExternalId, toDTO };
+module.exports = {
+  createTradeEvent,
+  updateStatus,
+  listRecentForUser,
+  findOpenEventByExternalId,
+  findRecentDuplicate,
+  toDTO
+};

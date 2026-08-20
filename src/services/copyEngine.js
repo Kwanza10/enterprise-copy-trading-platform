@@ -38,10 +38,42 @@ function calculateFollowerSize({ riskMode, riskValue, masterSize, followerBalanc
 
 async function dispatchExecution({ execution, tradeEvent, followerAccountRow, masterAccountRow, mappedSymbol }) {
   if (tradeEvent.eventType === 'position_modified') {
-    await copyExecutionService.markSkipped(
-      execution.id,
-      'position_modified events are not mirrored in Phase 1 (SL/TP sync not yet implemented).'
-    );
+    // Modify the follower's *existing* position in place - never place a new
+    // order here. Find it the same way position_closed does: via the
+    // original position_opened event for this master position, then the
+    // executed copy of that event for this follower.
+    const openEvent = tradeEvent.externalPositionId
+      ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
+      : null;
+    const priorExecution = openEvent
+      ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
+      : null;
+
+    if (!priorExecution || !priorExecution.resultPositionId) {
+      await copyExecutionService.markSkipped(execution.id, 'No matching open follower position found to modify.');
+      return;
+    }
+
+    if (followerAccountRow.platform !== 'tradelocker') {
+      const message = `Stub: ${followerAccountRow.platform} bridge not yet built - would update SL/TP on follower position ${priorExecution.resultPositionId}.`;
+      console.log(`[copyEngine] STUB ${followerAccountRow.platform}: ${message}`);
+      await copyExecutionService.markSkipped(execution.id, message);
+      return;
+    }
+
+    try {
+      const credentials = brokerAccountService.getDecryptedCredentials(followerAccountRow);
+      const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
+      await tradeLockerService.modifyPosition(session, {
+        accNum: credentials.accNum,
+        positionId: priorExecution.resultPositionId,
+        stopLoss: tradeEvent.sl,
+        takeProfit: tradeEvent.tp
+      });
+      await copyExecutionService.markExecuted(execution.id, priorExecution.resultPositionId);
+    } catch (error) {
+      await copyExecutionService.markFailed(execution.id, error.message);
+    }
     return;
   }
 

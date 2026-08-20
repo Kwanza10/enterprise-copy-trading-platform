@@ -1,5 +1,6 @@
 const express = require('express');
 const brokerAccountService = require('../services/brokerAccountService');
+const tradeEventService = require('../services/tradeEventService');
 const tradeQueue = require('../lib/tradeQueue');
 
 const router = express.Router();
@@ -53,6 +54,31 @@ router.post('/trade', async (req, res) => {
     return res.status(400).json({ error: validationError });
   }
 
+  const externalPositionId = String(req.body.externalPositionId);
+
+  // Bridges retry a webhook POST on timeout/connection-reset without any
+  // idempotency key of their own, which would otherwise re-copy (or
+  // re-close) the same master position to followers a second time. Treat a
+  // same-state event for the same master position arriving again within a
+  // few seconds as a retry, not a new event.
+  try {
+    const duplicate = await tradeEventService.findRecentDuplicate({
+      sourceAccountId: account.id,
+      eventType: req.body.eventType,
+      externalPositionId,
+      side: req.body.side || null,
+      size: req.body.size ?? null,
+      sl: req.body.sl ?? null,
+      tp: req.body.tp ?? null
+    });
+    if (duplicate) {
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+  } catch (error) {
+    console.error('Webhook idempotency check failed:', error.message);
+    return res.status(500).json({ error: 'Unable to verify webhook event.' });
+  }
+
   // Respond immediately so the sending bridge doesn't time out or retry;
   // actual copy-engine processing happens off the request/response cycle.
   res.status(200).json({ received: true });
@@ -66,7 +92,7 @@ router.post('/trade', async (req, res) => {
     price: req.body.price ?? null,
     sl: req.body.sl ?? null,
     tp: req.body.tp ?? null,
-    externalPositionId: String(req.body.externalPositionId),
+    externalPositionId,
     source: 'webhook',
     rawPayload: req.body
   });

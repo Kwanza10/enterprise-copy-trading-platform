@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS copy_trade_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_copy_trade_events_source_account ON copy_trade_events(source_account_id);
+CREATE INDEX IF NOT EXISTS idx_copy_trade_events_dedup ON copy_trade_events(source_account_id, event_type, external_position_id, received_at);
 
 CREATE TABLE IF NOT EXISTS copy_executions (
   id UUID PRIMARY KEY,
