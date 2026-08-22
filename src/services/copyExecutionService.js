@@ -35,6 +35,20 @@ async function markExecuted(id, resultPositionId) {
   return toDTO(result.rows[0]);
 }
 
+// Updates the *original* position_opened execution's tracked size after a
+// later position_modified event resizes the follower position (partial
+// close / add-on) - this is the "last known follower size" that the next
+// resize's delta gets computed against, so consecutive partial changes on
+// the master stay in sync instead of drifting relative to only the
+// original open size.
+async function updateCalculatedSize(id, calculatedSize) {
+  const result = await db.query(
+    `UPDATE copy_executions SET calculated_size = $2 WHERE id = $1 RETURNING *`,
+    [id, calculatedSize]
+  );
+  return toDTO(result.rows[0]);
+}
+
 // Finds the follower's opened position for a given master trade event, so a
 // later position_closed event for the same master position can be mirrored.
 async function findExecutedForTradeEvent(tradeEventId, followerAccountId) {
@@ -156,6 +170,7 @@ module.exports = {
   markExecuted,
   markFailed,
   markSkipped,
+  updateCalculatedSize,
   queueForBridge,
   claimPendingForFollower,
   reportBridgeResult,

@@ -47,25 +47,89 @@ const BRIDGE_PLATFORMS = ['mt4', 'mt5'];
 // finds the follower's own position for a given master position, via the
 // original position_opened event for that master position, then the
 // executed copy of that event for this follower. Returns null if there's no
-// matching open follower position (nothing to modify/close).
-async function resolveFollowerTargetPosition(masterAccountRow, followerAccountRow, tradeEvent) {
+// matching open follower position (nothing to modify/close). Returns the
+// full prior execution (not just its resultPositionId) because
+// dispatchToTradeLocker also needs its calculatedSize - the last known
+// follower position size - to detect a master-side partial
+// close/add-on (see below).
+async function resolveFollowerPriorExecution(masterAccountRow, followerAccountRow, tradeEvent) {
   const openEvent = tradeEvent.externalPositionId
     ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
     : null;
   const priorExecution = openEvent
     ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
     : null;
-  return priorExecution && priorExecution.resultPositionId ? priorExecution.resultPositionId : null;
+  return priorExecution && priorExecution.resultPositionId ? priorExecution : null;
 }
 
-async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId }) {
+// A position_modified event's size is the master's *current* size, not a
+// delta - the poller flags any size change (partial close or an add-on
+// trade merged into the same position id) the same way it flags an SL/TP
+// change, both as 'position_modified' (see tradeLockerPoller.positionHash).
+// Below MIN_SIZE_DELTA is float noise from the .toFixed(2)/.toFixed(4)
+// rounding in calculateFollowerSize, not a real change.
+const MIN_SIZE_DELTA = 0.001;
+
+async function syncFollowerPositionSize({ session, credentials, followerAccountRow, tradeEvent, mappedSymbol, targetPositionId, priorExecution, newSize }) {
+  const previousSize = priorExecution.calculatedSize;
+  if (previousSize === null || previousSize === undefined) return;
+
+  const sizeDelta = Number((newSize - previousSize).toFixed(4));
+  if (Math.abs(sizeDelta) < MIN_SIZE_DELTA) return;
+
+  if (sizeDelta < 0) {
+    // Partial close: well-defined against a specific position id/qty.
+    await tradeLockerService.closePosition(session, {
+      accNum: credentials.accNum,
+      positionId: targetPositionId,
+      qty: Math.abs(sizeDelta)
+    });
+  } else {
+    // Add-on: this assumes the follower's TradeLocker account is in a
+    // netting mode that merges a same-symbol/same-direction fill into the
+    // existing position id, matching how the master's own size grew in
+    // place rather than as a separate ticket. On a hedging-mode account
+    // this instead opens a second, untracked position - TradeLocker's
+    // netting-vs-hedging behavior per account type couldn't be confirmed
+    // from docs alone (same class of gap tradeLockerService.js's own
+    // column-resolution comments flag), so this is a best-effort mirror,
+    // not a guaranteed one.
+    await tradeLockerService.executeTrade({
+      credentials,
+      environment: followerAccountRow.environment,
+      accountId: credentials.accountId,
+      accNum: credentials.accNum,
+      symbol: mappedSymbol,
+      action: tradeEvent.side,
+      size: sizeDelta
+    });
+  }
+
+  await copyExecutionService.updateCalculatedSize(priorExecution.id, newSize);
+}
+
+async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId, priorExecution }) {
   try {
     const credentials = brokerAccountService.getDecryptedCredentials(followerAccountRow);
     const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
 
     if (tradeEvent.eventType === 'position_modified') {
-      // Modify the follower's *existing* position in place - never place a
-      // new order here.
+      // Bring the follower's size in line with the master's first (only
+      // meaningful for percent_of_master risk mode - fixed_lot/
+      // percent_of_balance don't depend on masterSize, so their
+      // calculatedSize is unchanged and this is a no-op for them), then
+      // modify the follower's *existing* position's SL/TP in place - never
+      // place a new order for an SL/TP-only change.
+      await syncFollowerPositionSize({
+        session,
+        credentials,
+        followerAccountRow,
+        tradeEvent,
+        mappedSymbol,
+        targetPositionId,
+        priorExecution,
+        newSize: execution.calculatedSize
+      });
       await tradeLockerService.modifyPosition(session, {
         accNum: credentials.accNum,
         positionId: targetPositionId,
@@ -124,18 +188,20 @@ async function dispatchToBridge({ execution, tradeEvent, followerAccountRow, tar
 async function dispatchExecution({ execution, tradeEvent, followerAccountRow, masterAccountRow, mappedSymbol }) {
   const isMutation = tradeEvent.eventType === 'position_modified' || tradeEvent.eventType === 'position_closed';
   let targetPositionId = null;
+  let priorExecution = null;
 
   if (isMutation) {
-    targetPositionId = await resolveFollowerTargetPosition(masterAccountRow, followerAccountRow, tradeEvent);
-    if (!targetPositionId) {
+    priorExecution = await resolveFollowerPriorExecution(masterAccountRow, followerAccountRow, tradeEvent);
+    if (!priorExecution) {
       const verb = tradeEvent.eventType === 'position_modified' ? 'modify' : 'close';
       await copyExecutionService.markSkipped(execution.id, `No matching open follower position found to ${verb}.`);
       return;
     }
+    targetPositionId = priorExecution.resultPositionId;
   }
 
   if (followerAccountRow.platform === 'tradelocker') {
-    await dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId });
+    await dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId, priorExecution });
     return;
   }
 
