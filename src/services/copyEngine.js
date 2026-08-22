@@ -36,75 +36,50 @@ function calculateFollowerSize({ riskMode, riskValue, masterSize, followerBalanc
   }
 }
 
-async function dispatchExecution({ execution, tradeEvent, followerAccountRow, masterAccountRow, mappedSymbol }) {
-  if (tradeEvent.eventType === 'position_modified') {
-    // Modify the follower's *existing* position in place - never place a new
-    // order here. Find it the same way position_closed does: via the
-    // original position_opened event for this master position, then the
-    // executed copy of that event for this follower.
-    const openEvent = tradeEvent.externalPositionId
-      ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
-      : null;
-    const priorExecution = openEvent
-      ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
-      : null;
+// MT4/MT5 have no server-reachable trading API to call directly (unlike
+// TradeLocker's REST /trade/* endpoints) - a follower on one of these
+// platforms can only be acted on by an EA running inside that terminal, so
+// its commands go through the poll/report bridge (see routes/ea.js) instead
+// of being executed synchronously here.
+const BRIDGE_PLATFORMS = ['mt4', 'mt5'];
 
-    if (!priorExecution || !priorExecution.resultPositionId) {
-      await copyExecutionService.markSkipped(execution.id, 'No matching open follower position found to modify.');
-      return;
-    }
+// Shared by both the modify and close paths (for every follower platform):
+// finds the follower's own position for a given master position, via the
+// original position_opened event for that master position, then the
+// executed copy of that event for this follower. Returns null if there's no
+// matching open follower position (nothing to modify/close).
+async function resolveFollowerTargetPosition(masterAccountRow, followerAccountRow, tradeEvent) {
+  const openEvent = tradeEvent.externalPositionId
+    ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
+    : null;
+  const priorExecution = openEvent
+    ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
+    : null;
+  return priorExecution && priorExecution.resultPositionId ? priorExecution.resultPositionId : null;
+}
 
-    if (followerAccountRow.platform !== 'tradelocker') {
-      const message = `Stub: ${followerAccountRow.platform} bridge not yet built - would update SL/TP on follower position ${priorExecution.resultPositionId}.`;
-      console.log(`[copyEngine] STUB ${followerAccountRow.platform}: ${message}`);
-      await copyExecutionService.markSkipped(execution.id, message);
-      return;
-    }
+async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId }) {
+  try {
+    const credentials = brokerAccountService.getDecryptedCredentials(followerAccountRow);
+    const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
 
-    try {
-      const credentials = brokerAccountService.getDecryptedCredentials(followerAccountRow);
-      const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
+    if (tradeEvent.eventType === 'position_modified') {
+      // Modify the follower's *existing* position in place - never place a
+      // new order here.
       await tradeLockerService.modifyPosition(session, {
         accNum: credentials.accNum,
-        positionId: priorExecution.resultPositionId,
+        positionId: targetPositionId,
         stopLoss: tradeEvent.sl,
         takeProfit: tradeEvent.tp
       });
-      await copyExecutionService.markExecuted(execution.id, priorExecution.resultPositionId);
-    } catch (error) {
-      await copyExecutionService.markFailed(execution.id, error.message);
+      await copyExecutionService.markExecuted(execution.id, targetPositionId);
+      return;
     }
-    return;
-  }
-
-  if (followerAccountRow.platform !== 'tradelocker') {
-    const verb = tradeEvent.eventType === 'position_closed' ? 'close' : 'open';
-    const message = `Stub: ${followerAccountRow.platform} bridge not yet built - would ${verb} ${mappedSymbol} ${execution.calculatedSize} lots on account ${followerAccountRow.id}.`;
-    console.log(`[copyEngine] STUB ${followerAccountRow.platform}: ${message}`);
-    await copyExecutionService.markSkipped(execution.id, message);
-    return;
-  }
-
-  try {
-    const credentials = brokerAccountService.getDecryptedCredentials(followerAccountRow);
 
     if (tradeEvent.eventType === 'position_closed') {
-      const openEvent = tradeEvent.externalPositionId
-        ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
-        : null;
-      const priorExecution = openEvent
-        ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
-        : null;
-
-      if (!priorExecution || !priorExecution.resultPositionId) {
-        await copyExecutionService.markSkipped(execution.id, 'No matching open follower position found to close.');
-        return;
-      }
-
-      const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
       await tradeLockerService.closePosition(session, {
         accNum: credentials.accNum,
-        positionId: priorExecution.resultPositionId,
+        positionId: targetPositionId,
         qty: 0
       });
       await copyExecutionService.markExecuted(execution.id);
@@ -126,6 +101,53 @@ async function dispatchExecution({ execution, tradeEvent, followerAccountRow, ma
   } catch (error) {
     await copyExecutionService.markFailed(execution.id, error.message);
   }
+}
+
+// Queues the command for the follower's EA to pick up on its next GET
+// /api/ea/commands poll - leaves the execution row 'pending' (now with
+// action/targetPositionId attached) rather than executing anything here,
+// since only the EA, running inside that MT4/MT5 terminal, actually can.
+async function dispatchToBridge({ execution, tradeEvent, followerAccountRow, targetPositionId }) {
+  const action =
+    tradeEvent.eventType === 'position_opened'
+      ? 'open'
+      : tradeEvent.eventType === 'position_closed'
+        ? 'close'
+        : 'modify';
+
+  await copyExecutionService.queueForBridge(execution.id, { action, targetPositionId });
+  console.log(
+    `[copyEngine] Queued ${action} command for ${followerAccountRow.platform} follower ${followerAccountRow.id} (execution=${execution.id}) - awaiting EA poll.`
+  );
+}
+
+async function dispatchExecution({ execution, tradeEvent, followerAccountRow, masterAccountRow, mappedSymbol }) {
+  const isMutation = tradeEvent.eventType === 'position_modified' || tradeEvent.eventType === 'position_closed';
+  let targetPositionId = null;
+
+  if (isMutation) {
+    targetPositionId = await resolveFollowerTargetPosition(masterAccountRow, followerAccountRow, tradeEvent);
+    if (!targetPositionId) {
+      const verb = tradeEvent.eventType === 'position_modified' ? 'modify' : 'close';
+      await copyExecutionService.markSkipped(execution.id, `No matching open follower position found to ${verb}.`);
+      return;
+    }
+  }
+
+  if (followerAccountRow.platform === 'tradelocker') {
+    await dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId });
+    return;
+  }
+
+  if (BRIDGE_PLATFORMS.includes(followerAccountRow.platform)) {
+    await dispatchToBridge({ execution, tradeEvent, followerAccountRow, targetPositionId });
+    return;
+  }
+
+  const verb = tradeEvent.eventType === 'position_closed' ? 'close' : tradeEvent.eventType === 'position_modified' ? 'modify' : 'open';
+  const message = `Stub: ${followerAccountRow.platform} bridge not yet built - would ${verb} ${mappedSymbol} ${execution.calculatedSize} lots on account ${followerAccountRow.id}.`;
+  console.log(`[copyEngine] STUB ${followerAccountRow.platform}: ${message}`);
+  await copyExecutionService.markSkipped(execution.id, message);
 }
 
 async function processRelationship({ relationship, tradeEvent, masterAccountRow }) {

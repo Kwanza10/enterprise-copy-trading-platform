@@ -1,7 +1,7 @@
 const express = require('express');
-const brokerAccountService = require('../services/brokerAccountService');
 const tradeEventService = require('../services/tradeEventService');
 const tradeQueue = require('../lib/tradeQueue');
+const { requireWebhookToken } = require('../middleware/webhookAuth');
 
 const router = express.Router();
 
@@ -31,23 +31,8 @@ function validatePayload(body) {
 
 // Bridges (MT4/5/NinjaTrader EAs) don't log in - each BrokerAccount carries
 // its own webhook token, issued once at creation (POST /api/broker-accounts).
-router.post('/trade', async (req, res) => {
-  const token = req.headers['x-webhook-token'];
-  if (!token) {
-    return res.status(401).json({ error: 'X-Webhook-Token header is required.' });
-  }
-
-  let account;
-  try {
-    account = await brokerAccountService.getBrokerAccountByWebhookToken(token);
-  } catch (error) {
-    console.error('Webhook token lookup failed:', error.message);
-    return res.status(500).json({ error: 'Unable to verify webhook token.' });
-  }
-
-  if (!account || account.status !== 'active') {
-    return res.status(401).json({ error: 'Invalid or inactive webhook token.' });
-  }
+router.post('/trade', requireWebhookToken, async (req, res) => {
+  const account = req.brokerAccount;
 
   const validationError = validatePayload(req.body || {});
   if (validationError) {

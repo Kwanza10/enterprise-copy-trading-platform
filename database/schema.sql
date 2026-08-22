@@ -193,3 +193,24 @@ CREATE TABLE IF NOT EXISTS copy_executions (
 
 CREATE INDEX IF NOT EXISTS idx_copy_executions_trade_event ON copy_executions(trade_event_id);
 CREATE INDEX IF NOT EXISTS idx_copy_executions_follower ON copy_executions(follower_account_id);
+
+-- MT4/MT5 have no server-reachable trading API - there's no equivalent of
+-- TradeLocker's REST /trade/* endpoints to call directly. Instead a follower
+-- EA running inside the MetaTrader terminal polls GET /api/ea/commands for
+-- work and reports back via POST /api/ea/commands/:id/result. These two
+-- columns turn a copy_executions row into that command: action says what to
+-- do, target_position_id says which of the follower's own local positions to
+-- act on (close/modify only - open creates a new one, so it's null there).
+ALTER TABLE copy_executions ADD COLUMN IF NOT EXISTS action VARCHAR(10) CHECK (action IN ('open', 'close', 'modify'));
+ALTER TABLE copy_executions ADD COLUMN IF NOT EXISTS target_position_id VARCHAR(100);
+
+-- 'dispatched' = claimed by an EA poll but not yet confirmed executed/failed.
+-- Recreate rather than IF NOT EXISTS: Postgres has no ADD CONSTRAINT IF NOT
+-- EXISTS, and the DROP is a no-op against a database that already has the
+-- widened constraint from a prior run of this file.
+ALTER TABLE copy_executions DROP CONSTRAINT IF EXISTS copy_executions_status_check;
+ALTER TABLE copy_executions ADD CONSTRAINT copy_executions_status_check
+  CHECK (status IN ('pending', 'dispatched', 'executed', 'failed', 'skipped'));
+
+-- Speeds up an EA's GET /api/ea/commands poll, which filters on exactly these.
+CREATE INDEX IF NOT EXISTS idx_copy_executions_follower_pending ON copy_executions(follower_account_id, status);
