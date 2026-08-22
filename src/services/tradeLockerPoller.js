@@ -1,6 +1,7 @@
 const env = require('../config/env');
 const brokerAccountService = require('./brokerAccountService');
 const tradeLockerService = require('./tradeLockerService');
+const tradeEventService = require('./tradeEventService');
 const copyEngine = require('./copyEngine');
 
 // Each master account gets its own independent setInterval (per spec: "safe
@@ -24,17 +25,21 @@ function positionHash(pos) {
   return `${pos.side}:${pos.size}:${pos.stopLoss}:${pos.takeProfit}`;
 }
 
-function buildEvent(eventType, accountRow, pos, instrumentsByTLId) {
+function resolveSymbol(accountRow, pos, instrumentsByTLId) {
   const instrument = instrumentsByTLId.get(String(pos.tradableInstrumentId));
   if (!instrument) {
     console.warn(
       `[tradeLockerPoller] account=${accountRow.id} could not resolve instrument name for tradableInstrumentId=${pos.tradableInstrumentId} - falling back to raw id as symbol, follower execution will fail to match it.`
     );
   }
+  return instrument ? instrument.name : String(pos.tradableInstrumentId);
+}
+
+function buildEvent(eventType, accountRow, pos, symbol) {
   return {
     sourceAccountId: accountRow.id,
     eventType,
-    symbol: instrument ? instrument.name : String(pos.tradableInstrumentId),
+    symbol,
     side: pos.side,
     size: pos.size,
     price: pos.openPrice,
@@ -46,6 +51,12 @@ function buildEvent(eventType, accountRow, pos, instrumentsByTLId) {
   };
 }
 
+// prevMap entries carry their already-resolved symbol forward (rather than
+// re-deriving it from tradableInstrumentId every cycle) so that positions
+// rehydrated from DB history - which don't have a tradableInstrumentId to
+// look up, only the symbol name that was already resolved before the
+// process restarted - still produce a correct position_closed/modified
+// event instead of falling back to an unresolvable raw id.
 function diffPositions(accountRow, positions, prevMap, instrumentsByTLId) {
   const currentMap = new Map();
   const events = [];
@@ -53,23 +64,48 @@ function diffPositions(accountRow, positions, prevMap, instrumentsByTLId) {
   for (const pos of positions) {
     const id = String(pos.id);
     const hash = positionHash(pos);
-    currentMap.set(id, { hash, pos });
-
     const prev = prevMap.get(id);
+    const symbol = prev ? prev.symbol : resolveSymbol(accountRow, pos, instrumentsByTLId);
+    currentMap.set(id, { hash, symbol, pos });
+
     if (!prev) {
-      events.push(buildEvent('position_opened', accountRow, pos, instrumentsByTLId));
+      events.push(buildEvent('position_opened', accountRow, pos, symbol));
     } else if (prev.hash !== hash) {
-      events.push(buildEvent('position_modified', accountRow, pos, instrumentsByTLId));
+      events.push(buildEvent('position_modified', accountRow, pos, symbol));
     }
   }
 
   for (const [id, prev] of prevMap) {
     if (!currentMap.has(id)) {
-      events.push(buildEvent('position_closed', accountRow, prev.pos, instrumentsByTLId));
+      events.push(buildEvent('position_closed', accountRow, prev.pos, prev.symbol));
     }
   }
 
   return { currentMap, events };
+}
+
+// Rebuilds lastPositions from copy_trade_events history instead of starting
+// empty, so a pm2 restart doesn't make every already-open master position
+// look "new" and get re-copied to followers. Positions closed while the
+// process was down are naturally caught too: they won't appear in the first
+// live /positions fetch, so diffPositions' second loop emits a real
+// position_closed for them exactly as if the process had been running the
+// whole time.
+async function rehydrateLastPositions(accountRow) {
+  const lastPositions = new Map();
+  try {
+    const openEvents = await tradeEventService.getOpenPositionsForAccount(accountRow.id);
+    for (const event of openEvents) {
+      const pos = { id: event.externalPositionId, side: event.side, size: event.size, stopLoss: event.sl, takeProfit: event.tp };
+      lastPositions.set(String(event.externalPositionId), { hash: positionHash(pos), symbol: event.symbol, pos });
+    }
+    console.log(`[tradeLockerPoller] account=${accountRow.id} rehydrated ${lastPositions.size} open position(s) from DB history.`);
+  } catch (error) {
+    console.error(
+      `[tradeLockerPoller] account=${accountRow.id} failed to rehydrate position state from DB (starting cold - already-open positions may be re-detected as new this run): ${error.message}`
+    );
+  }
+  return lastPositions;
 }
 
 async function initAccountContext(accountRow) {
@@ -89,7 +125,9 @@ async function initAccountContext(accountRow) {
   const minGapMs = rateLimit ? Math.ceil(rateLimit.intervalMs / rateLimit.limit) : 0;
   const effectiveIntervalMs = Math.max(env.tradeLocker.pollIntervalMs, minGapMs);
 
-  return { lastPositions: new Map(), instrumentsByTLId, columnResolver, effectiveIntervalMs, credentials };
+  const lastPositions = await rehydrateLastPositions(accountRow);
+
+  return { lastPositions, instrumentsByTLId, columnResolver, effectiveIntervalMs, credentials };
 }
 
 async function runCycle(accountRow, ctx) {

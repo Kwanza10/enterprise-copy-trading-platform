@@ -131,6 +131,17 @@ async function processRelationship({ relationship, tradeEvent, masterAccountRow 
 // poller - callers must never branch on where the event came from.
 async function processTradeEvent(input) {
   const tradeEvent = await tradeEventService.createTradeEvent(input);
+
+  // Durable, DB-level dedup: catches a retried webhook delivery (or any
+  // re-emitted event, from either source) before any follower fan-out or
+  // real order placement happens - not just before it gets logged.
+  if (tradeEvent.isDuplicate) {
+    console.log(
+      `[copyEngine] Duplicate trade event dropped: source=${tradeEvent.sourceAccountId} type=${tradeEvent.eventType} externalPositionId=${tradeEvent.externalPositionId}`
+    );
+    return tradeEvent;
+  }
+
   await tradeEventService.updateStatus(tradeEvent.id, 'processing');
 
   try {

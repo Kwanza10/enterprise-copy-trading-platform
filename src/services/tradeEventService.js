@@ -19,24 +19,53 @@ function toDTO(row) {
   };
 }
 
-async function createTradeEvent({
-  sourceAccountId,
-  eventType,
-  symbol,
-  side,
-  size,
-  price,
-  sl,
-  tp,
-  externalPositionId,
-  source,
-  rawPayload
-}) {
+// Durable dedup key for a retried delivery of the *same* event - mirrors the
+// fields tradeLockerPoller's positionHash() already uses to detect a real
+// change (side/size/sl/tp), plus the identity of which position/event this
+// is. A retry resends the same payload byte-for-byte, so it hashes
+// identically and gets rejected by the DB's unique index; a genuinely new
+// event for the same position (e.g. a later, different SL change) won't
+// collide because its payload differs.
+// Bucket the key to a short rolling window (5 min) instead of hashing
+// only the position's logical state forever. A genuine retried delivery
+// lands in the same bucket and still collides (good, still deduped). But
+// without this bucket, two DIFFERENT real events could hash identically
+// forever: if TradeLocker ever reuses a numeric externalPositionId after
+// a prior position on it fully closed, and the new position opens with
+// the same side/size/sl/tp as the old one, its position_opened event
+// would collide with the stale key and silently vanish. Bucketing bounds
+// the collision risk to ~5 minutes instead of indefinitely.
+const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+
+function computeIdempotencyKey({ sourceAccountId, eventType, externalPositionId, side, size, sl, tp }) {
+  const timeBucket = Math.floor(Date.now() / DEDUP_WINDOW_MS);
+  const payload = [sourceAccountId, eventType, externalPositionId, side, size, sl, tp, timeBucket].join('|');
+  return crypto.createHash('sha256').update(payload).digest('hex');
+};
+
+
+async function createTradeEvent(input) {
+  const {
+    sourceAccountId,
+    eventType,
+    symbol,
+    side,
+    size,
+    price,
+    sl,
+    tp,
+    externalPositionId,
+    source,
+    rawPayload
+  } = input;
+
   const id = crypto.randomUUID();
+  const idempotencyKey = computeIdempotencyKey(input);
   const result = await db.query(
     `INSERT INTO copy_trade_events
-       (id, source_account_id, event_type, symbol, side, size, price, sl, tp, external_position_id, source, raw_payload, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'received')
+       (id, source_account_id, event_type, symbol, side, size, price, sl, tp, external_position_id, source, raw_payload, status, idempotency_key)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'received', $13)
+     ON CONFLICT (idempotency_key) DO NOTHING
      RETURNING *`,
     [
       id,
@@ -50,10 +79,16 @@ async function createTradeEvent({
       tp ?? null,
       externalPositionId || null,
       source,
-      rawPayload ? JSON.stringify(rawPayload) : null
+      rawPayload ? JSON.stringify(rawPayload) : null,
+      idempotencyKey
     ]
   );
-  return toDTO(result.rows[0]);
+
+  if (result.rows.length === 0) {
+    return { isDuplicate: true, idempotencyKey, sourceAccountId, eventType, externalPositionId };
+  }
+
+  return { ...toDTO(result.rows[0]), isDuplicate: false };
 }
 
 // Used when a position_closed event arrives, to find the original
@@ -68,6 +103,22 @@ async function findOpenEventByExternalId(sourceAccountId, externalPositionId) {
     [sourceAccountId, externalPositionId]
   );
   return result.rows[0] ? toDTO(result.rows[0]) : null;
+}
+
+// Used by tradeLockerPoller on startup to rehydrate its in-memory
+// lastPositions state, so a process restart doesn't make it treat
+// already-open master positions as newly opened and re-copy them. Latest
+// event per external_position_id, excluding ones whose latest state is
+// already closed.
+async function getOpenPositionsForAccount(sourceAccountId) {
+  const result = await db.query(
+    `SELECT DISTINCT ON (external_position_id) *
+     FROM copy_trade_events
+     WHERE source_account_id = $1 AND external_position_id IS NOT NULL
+     ORDER BY external_position_id, received_at DESC`,
+    [sourceAccountId]
+  );
+  return result.rows.filter((row) => row.event_type !== 'position_closed').map(toDTO);
 }
 
 async function updateStatus(id, status) {
@@ -86,4 +137,11 @@ async function listRecentForUser(userId, limit = 50) {
   return result.rows.map(toDTO);
 }
 
-module.exports = { createTradeEvent, updateStatus, listRecentForUser, findOpenEventByExternalId, toDTO };
+module.exports = {
+  createTradeEvent,
+  updateStatus,
+  listRecentForUser,
+  findOpenEventByExternalId,
+  getOpenPositionsForAccount,
+  toDTO
+};

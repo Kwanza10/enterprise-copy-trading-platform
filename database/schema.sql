@@ -156,10 +156,23 @@ CREATE TABLE IF NOT EXISTS copy_trade_events (
   source VARCHAR(10) NOT NULL CHECK (source IN ('webhook', 'poll')),
   raw_payload JSONB,
   status VARCHAR(20) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'queued', 'processing', 'completed', 'failed')),
+  idempotency_key VARCHAR(64),
   received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- CREATE TABLE IF NOT EXISTS above is a no-op against an already-existing
+-- table, so this column needs its own idempotent add for databases that
+-- already ran an earlier version of this schema.
+ALTER TABLE copy_trade_events ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64);
+
 CREATE INDEX IF NOT EXISTS idx_copy_trade_events_source_account ON copy_trade_events(source_account_id);
+-- Durable dedup for retried webhook deliveries (or any re-emitted event):
+-- computed from source account + external position id + event type + the
+-- same side/size/sl/tp fields the poller already hashes to detect position
+-- changes. Plain unique index, not partial - Postgres already treats
+-- multiple NULLs as non-conflicting, so pre-existing rows without a key are
+-- unaffected.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_trade_events_idempotency_key ON copy_trade_events(idempotency_key);
 
 CREATE TABLE IF NOT EXISTS copy_executions (
   id UUID PRIMARY KEY,

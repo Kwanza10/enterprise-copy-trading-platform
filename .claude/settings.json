@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:public-api.tradelocker.com)"
+      "WebFetch(domain:public-api.tradelocker.com)",
+           "Bash(node __smoketest_hub.js)",
+          "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3996/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3996/dashboard.html)",
+      "Bash(taskkill //F //PID 16560)",
+      "Bash(rm -f /tmp/boot_hub.log)",
+      "Bash(node --check src/routes/auth.js)",
+      "Bash(node __smoketest_auth.js)",
+      "Bash(node --check src/services/tradeLockerService.js)",
+      "Bash(node --check src/routes/broker-accounts.js)",
+            "Bash(node __smoketest_accnum.js)",
+      "Bash(node __smoketest_columns.js)",
+      "Bash(node --check src/services/tradeLockerPoller.js)",
+      "Bash(node __smoketest_symbol.js)"
     ]
   }
 }
