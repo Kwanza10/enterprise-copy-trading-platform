@@ -147,6 +147,10 @@ async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow
       return;
     }
 
+    // Carries the master's SL/TP through to the opening order itself - a
+    // master position opened WITH SL/TP already set previously left the
+    // follower's copy unprotected until (if ever) a later position_modified
+    // event set them.
     const order = await tradeLockerService.executeTrade({
       credentials,
       environment: followerAccountRow.environment,
@@ -154,7 +158,9 @@ async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow
       accNum: credentials.accNum,
       symbol: mappedSymbol,
       action: tradeEvent.side,
-      size: execution.calculatedSize
+      size: execution.calculatedSize,
+      stopLoss: tradeEvent.sl,
+      takeProfit: tradeEvent.tp
     });
 
     const resultPositionId = order && (order.positionId || order.orderId || order.id);

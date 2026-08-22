@@ -27,7 +27,7 @@ let nextFollowerTicket = 1;
 
 tradeLockerService.authenticate = async () => ({ accessToken: 'mock', baseUrl: 'mock', expireDate: Date.now() + 60000 });
 tradeLockerService.executeTrade = async (args) => {
-  calls.executeTrade.push({ symbol: args.symbol, action: args.action, size: args.size });
+  calls.executeTrade.push({ symbol: args.symbol, action: args.action, size: args.size, stopLoss: args.stopLoss, takeProfit: args.takeProfit });
   return { positionId: `TL-F-${nextFollowerTicket++}` };
 };
 tradeLockerService.closePosition = async (session, args) => {
@@ -245,6 +245,25 @@ async function run() {
   );
   assert.strictEqual(Number(fixedExec.rows[0].calculated_size), 0.2, 'fixed_lot size must stay constant despite the master resizing');
   console.log('5. fixed_lot: master size 1.0 -> 5.0 does NOT resize the follower (stays at riskValue): OK');
+
+  // 6. master opens WITH SL/TP already set -> follower's opening order must
+  // carry them too, not open unprotected until some later modify event.
+  await copyEngine.processTradeEvent({
+    sourceAccountId: master2.id,
+    eventType: 'position_opened',
+    symbol: 'XAUUSD',
+    side: 'buy',
+    size: 1.0,
+    sl: 2300,
+    tp: 2400,
+    externalPositionId: 'TL-M-3',
+    source: 'poll',
+    rawPayload: {}
+  });
+  const openWithStops = calls.executeTrade[calls.executeTrade.length - 1];
+  assert.strictEqual(openWithStops.stopLoss, 2300, "master's SL at open must be carried onto the follower's opening order");
+  assert.strictEqual(openWithStops.takeProfit, 2400, "master's TP at open must be carried onto the follower's opening order");
+  console.log('6. open with SL/TP already set on master: follower opening order carries stopLoss=2300, takeProfit=2400: OK');
 
   console.log('\nALL TRADELOCKER RESIZE TESTS PASSED');
 }

@@ -120,22 +120,53 @@ function resolveInstrument(instruments, symbol) {
   return { tradableInstrumentId: match.tradableInstrumentId, routeId: route.id };
 }
 
-async function placeMarketOrder(session, { accountId, accNum, tradableInstrumentId, routeId, side, qty }) {
+// qty/tradableInstrumentId are sent as strings and price as null for a
+// market order - cross-checked against TradeLocker's own official Python
+// client (TradeLocker/tradelocker-python's create_order: `"qty": str(quantity)`,
+// `"tradableInstrumentId": str(instrument_id)`, and price explicitly nulled
+// out for market orders), not just this codebase's own prior guess.
+// stopLoss/takeProfit are optional so a master's SL/TP already set at open
+// time can be mirrored on the follower's opening order too, instead of the
+// follower opening unprotected until a later position_modified event (if
+// any) sets them - each needs its *Type sibling ('absolute', since our
+// values are always the position's literal price levels, never an offset)
+// because create_order raises server-side if a value is given without one.
+async function placeMarketOrder(session, { accountId, accNum, tradableInstrumentId, routeId, side, qty, stopLoss, takeProfit }) {
+  const body = {
+    qty: String(qty),
+    routeId,
+    side,
+    validity: 'IOC',
+    type: 'market',
+    tradableInstrumentId: String(tradableInstrumentId),
+    price: null
+  };
+  if (stopLoss !== undefined && stopLoss !== null) {
+    body.stopLoss = stopLoss;
+    body.stopLossType = 'absolute';
+  }
+  if (takeProfit !== undefined && takeProfit !== null) {
+    body.takeProfit = takeProfit;
+    body.takeProfitType = 'absolute';
+  }
+
   const data = await request(session.baseUrl, `/trade/accounts/${accountId}/orders`, {
     method: 'POST',
     accessToken: session.accessToken,
     accNum,
-    body: { qty, routeId, side, validity: 'IOC', type: 'market', tradableInstrumentId, price: 0 }
+    body
   });
   return unwrap(data);
 }
 
 async function closePosition(session, { accNum, positionId, qty }) {
+  // qty as a string: matches TradeLocker's own Python client's
+  // _place_close_position_order (`{"qty": str(quantity)}`).
   const data = await request(session.baseUrl, `/trade/positions/${positionId}`, {
     method: 'DELETE',
     accessToken: session.accessToken,
     accNum,
-    body: { qty: qty || 0 }
+    body: { qty: String(qty || 0) }
   });
   return unwrap(data);
 }
@@ -143,10 +174,21 @@ async function closePosition(session, { accNum, positionId, qty }) {
 // Updates an existing position's stop-loss/take-profit in place - used to
 // mirror the master's SL/TP/trailing-stop changes onto the matching
 // follower position, as opposed to placeMarketOrder which opens a new one.
+// stopLossType/takeProfitType 'absolute' mirrors create_order's requirement
+// for the same field pair (see placeMarketOrder above) - inferred by analogy
+// for this endpoint since TradeLocker's official client doesn't expose a
+// direct modify_position example to confirm against, so this is a step down
+// in confidence from the create_order-derived fixes above.
 async function modifyPosition(session, { accNum, positionId, stopLoss, takeProfit }) {
   const body = {};
-  if (stopLoss !== undefined && stopLoss !== null) body.stopLoss = stopLoss;
-  if (takeProfit !== undefined && takeProfit !== null) body.takeProfit = takeProfit;
+  if (stopLoss !== undefined && stopLoss !== null) {
+    body.stopLoss = stopLoss;
+    body.stopLossType = 'absolute';
+  }
+  if (takeProfit !== undefined && takeProfit !== null) {
+    body.takeProfit = takeProfit;
+    body.takeProfitType = 'absolute';
+  }
 
   const data = await request(session.baseUrl, `/trade/positions/${positionId}`, {
     method: 'PATCH',
@@ -181,6 +223,21 @@ async function getConfig(session, accNum) {
 // matching is normalized (strips spaces/underscores/case) and candidate
 // lists are intentionally broad - see resolveColumnIndex's thrown error and
 // the raw-columns log in getConfig callers for how a real mismatch surfaces.
+//
+// stopLoss/takeProfit specifically: TradeLocker's own official Python client
+// (TradeLocker/tradelocker-python's types.py) types a POSITION's columns as
+// id/tradableInstrumentId/routeId/side/qty/avgPrice/stopLossId/takeProfitId/
+// openDate/unrealizedPl/strategyId - note stopLossId/takeProfitId (linked
+// order ids), not stopLoss/takeProfit (price values), and even that SDK
+// never resolves those ids to an actual price anywhere in its own code. That
+// suggests a position's current SL/TP may not be exposed as a plain number
+// on this endpoint at all - it might only be readable by separately listing
+// orders and cross-referencing stopLossId/takeProfitId against an order's
+// price - which would mean these two candidates below never resolve against
+// a real account, and this system's SL/TP *change detection* (not the write
+// side - modifyPosition's PATCH request shape is confirmed correct) could be
+// silently inert. Unconfirmed without a live positions response to inspect;
+// flagged rather than guessed at further.
 const FIELD_CANDIDATES = {
   id: ['id', 'positionid', 'position', 'ticket', 'orderid'],
   tradableInstrumentId: ['tradableinstrumentid', 'instrumentid', 'instrument'],
@@ -248,7 +305,7 @@ function extractRateLimit(config, rateLimitType) {
   return { limit: entry.limit, intervalMs };
 }
 
-async function executeTrade({ credentials, environment, accountId, accNum, symbol, action, size }) {
+async function executeTrade({ credentials, environment, accountId, accNum, symbol, action, size, stopLoss, takeProfit }) {
   if (action === 'close') {
     throw new Error('Use closePosition() with an external_position_id for close actions.');
   }
@@ -256,7 +313,7 @@ async function executeTrade({ credentials, environment, accountId, accNum, symbo
   const session = await authenticate(credentials, environment);
   const instruments = await listInstruments(session, accountId, accNum);
   const { tradableInstrumentId, routeId } = resolveInstrument(instruments, symbol);
-  return placeMarketOrder(session, { accountId, accNum, tradableInstrumentId, routeId, side: action, qty: size });
+  return placeMarketOrder(session, { accountId, accNum, tradableInstrumentId, routeId, side: action, qty: size, stopLoss, takeProfit });
 }
 
 module.exports = {
