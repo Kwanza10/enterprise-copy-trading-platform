@@ -140,6 +140,23 @@ async function closePosition(session, { accNum, positionId, qty }) {
   return unwrap(data);
 }
 
+// Updates an existing position's stop-loss/take-profit in place - used to
+// mirror the master's SL/TP/trailing-stop changes onto the matching
+// follower position, as opposed to placeMarketOrder which opens a new one.
+async function modifyPosition(session, { accNum, positionId, stopLoss, takeProfit }) {
+  const body = {};
+  if (stopLoss !== undefined && stopLoss !== null) body.stopLoss = stopLoss;
+  if (takeProfit !== undefined && takeProfit !== null) body.takeProfit = takeProfit;
+
+  const data = await request(session.baseUrl, `/trade/positions/${positionId}`, {
+    method: 'PATCH',
+    accessToken: session.accessToken,
+    accNum,
+    body
+  });
+  return unwrap(data);
+}
+
 async function getPositions(session, accountId, accNum) {
   const data = await request(session.baseUrl, `/trade/accounts/${accountId}/positions`, {
     accessToken: session.accessToken,
@@ -250,6 +267,7 @@ module.exports = {
   resolveInstrument,
   placeMarketOrder,
   closePosition,
+  modifyPosition,
   getPositions,
   getConfig,
   buildColumnResolver,

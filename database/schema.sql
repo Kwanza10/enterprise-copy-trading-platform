@@ -174,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_copy_trade_events_source_account ON copy_trade_ev
 -- unaffected.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_trade_events_idempotency_key ON copy_trade_events(idempotency_key);
 
+-- Speeds up findRecentDuplicate's lookup query (webhook route's fast
+-- pre-check), which filters on exactly these columns.
+CREATE INDEX IF NOT EXISTS idx_copy_trade_events_dedup ON copy_trade_events(source_account_id, event_type, external_position_id, received_at);
+
 CREATE TABLE IF NOT EXISTS copy_executions (
   id UUID PRIMARY KEY,
   trade_event_id UUID NOT NULL REFERENCES copy_trade_events(id),

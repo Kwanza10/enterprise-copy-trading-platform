@@ -41,8 +41,7 @@ function computeIdempotencyKey({ sourceAccountId, eventType, externalPositionId,
   const timeBucket = Math.floor(Date.now() / DEDUP_WINDOW_MS);
   const payload = [sourceAccountId, eventType, externalPositionId, side, size, sl, tp, timeBucket].join('|');
   return crypto.createHash('sha256').update(payload).digest('hex');
-};
-
+}
 
 async function createTradeEvent(input) {
   const {
@@ -121,6 +120,32 @@ async function getOpenPositionsForAccount(sourceAccountId) {
   return result.rows.filter((row) => row.event_type !== 'position_closed').map(toDTO);
 }
 
+// Webhook bridges (MT4/5 EAs) retry on timeout/connection-reset without any
+// idempotency key of their own, so the same position event can arrive twice.
+// Fast pre-check used by the webhook route to skip queuing entirely on an
+// obvious retry. This is a best-effort check (a same-millisecond double
+// retry could theoretically slip past it) - the idempotency_key unique
+// index in createTradeEvent is the real backstop that guarantees a
+// duplicate can never actually be processed twice, even if this check
+// misses one.
+async function findRecentDuplicate({ sourceAccountId, eventType, externalPositionId, side, size, sl, tp, windowMs = 15000 }) {
+  const result = await db.query(
+    `SELECT * FROM copy_trade_events
+     WHERE source_account_id = $1
+       AND event_type = $2
+       AND external_position_id = $3
+       AND side IS NOT DISTINCT FROM $4
+       AND size IS NOT DISTINCT FROM $5
+       AND sl IS NOT DISTINCT FROM $6
+       AND tp IS NOT DISTINCT FROM $7
+       AND received_at >= NOW() - ($8 || ' milliseconds')::interval
+     ORDER BY received_at DESC
+     LIMIT 1`,
+    [sourceAccountId, eventType, externalPositionId, side || null, size ?? null, sl ?? null, tp ?? null, windowMs]
+  );
+  return result.rows[0] ? toDTO(result.rows[0]) : null;
+}
+
 async function updateStatus(id, status) {
   await db.query(`UPDATE copy_trade_events SET status = $1 WHERE id = $2`, [status, id]);
 }
@@ -143,5 +168,6 @@ module.exports = {
   listRecentForUser,
   findOpenEventByExternalId,
   getOpenPositionsForAccount,
+  findRecentDuplicate,
   toDTO
 };

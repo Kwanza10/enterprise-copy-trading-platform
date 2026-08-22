@@ -130,6 +130,34 @@ async function initAccountContext(accountRow) {
   return { lastPositions, instrumentsByTLId, columnResolver, effectiveIntervalMs, credentials };
 }
 
+// Seeds ctx.lastPositions from whatever is already open on the master before
+// the very first diff runs. Without this, every (re)start of the poller -
+// e.g. a deploy - sees an empty lastPositions map and diffPositions treats
+// every pre-existing position as brand new, re-emitting position_opened for
+// positions that were already open (and likely already copied) before this
+// process started, duplicating follower trades on every restart.
+async function primeAccountContext(accountRow, ctx) {
+  try {
+    const session = await tradeLockerService.authenticate(ctx.credentials, accountRow.environment);
+    const rawPositions = await tradeLockerService.getPositions(session, ctx.credentials.accountId, ctx.credentials.accNum);
+    const positions = rawPositions.map((row) => tradeLockerService.mapPositionRow(row, ctx.columnResolver));
+
+    const primedMap = new Map();
+    for (const pos of positions) {
+      primedMap.set(String(pos.id), { hash: positionHash(pos), pos });
+    }
+    ctx.lastPositions = primedMap;
+
+    console.log(
+      `[tradeLockerPoller] account=${accountRow.id} primed with ${positions.length} pre-existing position(s) - won't re-emit position_opened for these.`
+    );
+  } catch (error) {
+    console.error(
+      `[tradeLockerPoller] account=${accountRow.id} failed to prime existing positions, first cycle may re-emit duplicate opens: ${error.message}`
+    );
+  }
+}
+
 async function runCycle(accountRow, ctx) {
   const start = Date.now();
   try {
@@ -160,6 +188,8 @@ async function setupAccountPolling(accountRow) {
     console.error(`[tradeLockerPoller] account=${accountRow.id} failed to initialize, will not poll: ${error.message}`);
     return;
   }
+
+  await primeAccountContext(accountRow, ctx);
 
   console.log(`[tradeLockerPoller] account=${accountRow.id} polling every ${ctx.effectiveIntervalMs}ms`);
   runCycle(accountRow, ctx);
