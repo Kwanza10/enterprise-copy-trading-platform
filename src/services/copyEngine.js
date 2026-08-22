@@ -64,13 +64,13 @@ async function resolveFollowerPriorExecution(masterAccountRow, followerAccountRo
 
 // A position_modified event's size is the master's *current* size, not a
 // delta - the poller flags any size change (partial close or an add-on
-// trade merged into the same position id) the same way it flags an SL/TP
-// change, both as 'position_modified' (see tradeLockerPoller.positionHash).
-// Below MIN_SIZE_DELTA is float noise from the .toFixed(2)/.toFixed(4)
-// rounding in calculateFollowerSize, not a real change.
+// trade) the same way it flags an SL/TP change, both as 'position_modified'
+// (see tradeLockerPoller.positionHash). Below MIN_SIZE_DELTA is float noise
+// from the .toFixed(2)/.toFixed(4) rounding in calculateFollowerSize, not a
+// real change.
 const MIN_SIZE_DELTA = 0.001;
 
-async function syncFollowerPositionSize({ session, credentials, followerAccountRow, tradeEvent, mappedSymbol, targetPositionId, priorExecution, newSize }) {
+async function syncFollowerPositionSize({ session, credentials, targetPositionId, priorExecution, newSize }) {
   const previousSize = priorExecution.calculatedSize;
   if (previousSize === null || previousSize === undefined) return;
 
@@ -78,34 +78,34 @@ async function syncFollowerPositionSize({ session, credentials, followerAccountR
   if (Math.abs(sizeDelta) < MIN_SIZE_DELTA) return;
 
   if (sizeDelta < 0) {
-    // Partial close: well-defined against a specific position id/qty.
+    // Partial close: confirmed against TradeLocker's own official Python
+    // SDK (TradeLocker/tradelocker-python) - DELETE /trade/positions/{id}
+    // with {qty: <amount to close>}, well-defined against a specific
+    // position id.
     await tradeLockerService.closePosition(session, {
       accNum: credentials.accNum,
       positionId: targetPositionId,
       qty: Math.abs(sizeDelta)
     });
-  } else {
-    // Add-on: this assumes the follower's TradeLocker account is in a
-    // netting mode that merges a same-symbol/same-direction fill into the
-    // existing position id, matching how the master's own size grew in
-    // place rather than as a separate ticket. On a hedging-mode account
-    // this instead opens a second, untracked position - TradeLocker's
-    // netting-vs-hedging behavior per account type couldn't be confirmed
-    // from docs alone (same class of gap tradeLockerService.js's own
-    // column-resolution comments flag), so this is a best-effort mirror,
-    // not a guaranteed one.
-    await tradeLockerService.executeTrade({
-      credentials,
-      environment: followerAccountRow.environment,
-      accountId: credentials.accountId,
-      accNum: credentials.accNum,
-      symbol: mappedSymbol,
-      action: tradeEvent.side,
-      size: sizeDelta
-    });
+    await copyExecutionService.updateCalculatedSize(priorExecution.id, newSize);
+    return;
   }
 
-  await copyExecutionService.updateCalculatedSize(priorExecution.id, newSize);
+  // Add-on (master increased size): deliberately NOT mirrored. TradeLocker's
+  // official Python SDK confirms every filled order becomes its own new
+  // position - create_order's position_netting flag defaults to False, and
+  // even when true only closes *opposite*-side positions to net exposure;
+  // there is no same-direction merge-into-existing-position behavior.
+  // Firing an order here for the delta would open a second, real position
+  // with an id this system never records - it would never get closed when
+  // the master closes, becoming permanently orphaned, unmanaged exposure on
+  // a live account. Safer to skip the resize (SL/TP still syncs below) than
+  // risk that. Proper support needs tracking multiple follower position ids
+  // per master position, not a one-line fix.
+  console.warn(
+    `[copyEngine] Master position grew (size ${previousSize} -> ${newSize}) but the follower TradeLocker position was NOT resized to match - `
+    + `TradeLocker doesn't merge same-direction add-on orders into an existing position, so mirroring this would orphan an untracked position. Skipped.`
+  );
 }
 
 async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow, mappedSymbol, targetPositionId, priorExecution }) {
@@ -114,18 +114,15 @@ async function dispatchToTradeLocker({ execution, tradeEvent, followerAccountRow
     const session = await tradeLockerService.authenticate(credentials, followerAccountRow.environment);
 
     if (tradeEvent.eventType === 'position_modified') {
-      // Bring the follower's size in line with the master's first (only
-      // meaningful for percent_of_master risk mode - fixed_lot/
-      // percent_of_balance don't depend on masterSize, so their
-      // calculatedSize is unchanged and this is a no-op for them), then
-      // modify the follower's *existing* position's SL/TP in place - never
-      // place a new order for an SL/TP-only change.
+      // Bring the follower's size in line with the master's first when it's
+      // safe to (a same-direction decrease, i.e. a partial close - only
+      // meaningful for percent_of_master risk mode, since fixed_lot/
+      // percent_of_balance don't depend on masterSize and are a no-op
+      // here), then modify the follower's *existing* position's SL/TP in
+      // place - never place a new order for an SL/TP-only change.
       await syncFollowerPositionSize({
         session,
         credentials,
-        followerAccountRow,
-        tradeEvent,
-        mappedSymbol,
         targetPositionId,
         priorExecution,
         newSize: execution.calculatedSize

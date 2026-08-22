@@ -153,7 +153,12 @@ async function run() {
   assert.strictEqual(Number(openExec.rows[0].calculated_size), 0.6, 'tracked follower size must be updated after the partial close');
   console.log('2. partial close: master 2.0 -> 1.2 -> follower partial-closed 1.0 -> 0.6 (qty=0.4), SL/TP still synced: OK');
 
-  // 3. master adds back up to 3.0 -> follower should add 0.9 (0.6 -> 1.5)
+  // 3. master adds back up to 3.0 -> follower must NOT place an add-on order.
+  // TradeLocker's official Python SDK confirms same-direction orders don't
+  // merge into an existing position (create_order's position_netting flag
+  // defaults to False, and even then only nets *opposite*-side exposure) -
+  // an add-on order here would open a second, untracked position that never
+  // gets closed later. SL/TP must still sync; size must NOT change.
   await copyEngine.processTradeEvent({
     sourceAccountId: master.id,
     eventType: 'position_modified',
@@ -166,16 +171,15 @@ async function run() {
     source: 'poll',
     rawPayload: {}
   });
-  assert.strictEqual(calls.executeTrade.length, 2, 'an increase must place an additional order, not skip it');
-  assert.strictEqual(calls.executeTrade[1].size, 0.9);
-  assert.strictEqual(calls.executeTrade[1].action, 'buy');
-  assert.strictEqual(calls.closePosition.length, 1, 'an increase must not also call closePosition');
+  assert.strictEqual(calls.executeTrade.length, 1, 'an increase must NOT place an additional order (would orphan an untracked position)');
+  assert.strictEqual(calls.closePosition.length, 1, 'an increase must not call closePosition either');
+  assert.strictEqual(calls.modifyPosition.length, 2, 'SL/TP must still sync even when the resize itself is skipped');
   const openExec2 = await db.query(
     `SELECT * FROM copy_executions WHERE follower_account_id = $1 AND result_position_id = 'TL-F-1' ORDER BY created_at ASC LIMIT 1`,
     [follower.id]
   );
-  assert.strictEqual(Number(openExec2.rows[0].calculated_size), 1.5, 'tracked follower size must be updated after the add-on');
-  console.log('3. add-on: master 1.2 -> 3.0 -> follower added 0.6 -> 1.5 (delta=0.9): OK');
+  assert.strictEqual(Number(openExec2.rows[0].calculated_size), 0.6, 'tracked follower size must stay unchanged when the add-on is skipped');
+  console.log('3. add-on: master 1.2 -> 3.0 -> follower size deliberately left at 0.6 (no untracked position opened), SL/TP still synced: OK');
 
   // 4. close -> full close (qty 0) on the follower's tracked position
   await copyEngine.processTradeEvent({
