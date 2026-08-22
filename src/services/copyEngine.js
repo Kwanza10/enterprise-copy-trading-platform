@@ -4,6 +4,31 @@ const symbolMappingService = require('./symbolMappingService');
 const tradeEventService = require('./tradeEventService');
 const copyExecutionService = require('./copyExecutionService');
 const tradeLockerService = require('./tradeLockerService');
+const mtBridgeService = require('./mtBridgeService');
+
+const MT_PLATFORMS = ['mt4', 'mt5'];
+
+// MT4/5 have no cloud API - an EA polls mtBridgeService's queue instead of
+// this call executing anything directly, so the execution is left 'pending'
+// here and only gets finalized (executed/failed) later, when the EA acks
+// the command via POST /api/bridge/commands/:id/ack.
+async function dispatchToMtBridge({ execution, commandType, followerAccountRow, symbol, side, size, sl, tp, targetPositionId }) {
+  try {
+    await mtBridgeService.createCommand({
+      executionId: execution.id,
+      followerAccountId: followerAccountRow.id,
+      commandType,
+      symbol,
+      side,
+      size,
+      sl,
+      tp,
+      targetPositionId
+    });
+  } catch (error) {
+    await copyExecutionService.markFailed(execution.id, `Failed to queue bridge command: ${error.message}`);
+  }
+}
 
 // Simplified, documented approximation of USD value per 1.0 standard lot,
 // used only for the percent_of_balance risk mode's sizing formula
@@ -54,6 +79,18 @@ async function dispatchExecution({ execution, tradeEvent, followerAccountRow, ma
       return;
     }
 
+    if (MT_PLATFORMS.includes(followerAccountRow.platform)) {
+      await dispatchToMtBridge({
+        execution,
+        commandType: 'modify',
+        followerAccountRow,
+        sl: tradeEvent.sl,
+        tp: tradeEvent.tp,
+        targetPositionId: priorExecution.resultPositionId
+      });
+      return;
+    }
+
     if (followerAccountRow.platform !== 'tradelocker') {
       const message = `Stub: ${followerAccountRow.platform} bridge not yet built - would update SL/TP on follower position ${priorExecution.resultPositionId}.`;
       console.log(`[copyEngine] STUB ${followerAccountRow.platform}: ${message}`);
@@ -74,6 +111,42 @@ async function dispatchExecution({ execution, tradeEvent, followerAccountRow, ma
     } catch (error) {
       await copyExecutionService.markFailed(execution.id, error.message);
     }
+    return;
+  }
+
+  if (MT_PLATFORMS.includes(followerAccountRow.platform)) {
+    if (tradeEvent.eventType === 'position_closed') {
+      const openEvent = tradeEvent.externalPositionId
+        ? await tradeEventService.findOpenEventByExternalId(masterAccountRow.id, tradeEvent.externalPositionId)
+        : null;
+      const priorExecution = openEvent
+        ? await copyExecutionService.findExecutedForTradeEvent(openEvent.id, followerAccountRow.id)
+        : null;
+
+      if (!priorExecution || !priorExecution.resultPositionId) {
+        await copyExecutionService.markSkipped(execution.id, 'No matching open follower position found to close.');
+        return;
+      }
+
+      await dispatchToMtBridge({
+        execution,
+        commandType: 'close',
+        followerAccountRow,
+        targetPositionId: priorExecution.resultPositionId
+      });
+      return;
+    }
+
+    await dispatchToMtBridge({
+      execution,
+      commandType: 'open',
+      followerAccountRow,
+      symbol: mappedSymbol,
+      side: tradeEvent.side,
+      size: execution.calculatedSize,
+      sl: tradeEvent.sl,
+      tp: tradeEvent.tp
+    });
     return;
   }
 

@@ -193,3 +193,32 @@ CREATE TABLE IF NOT EXISTS copy_executions (
 
 CREATE INDEX IF NOT EXISTS idx_copy_executions_trade_event ON copy_executions(trade_event_id);
 CREATE INDEX IF NOT EXISTS idx_copy_executions_follower ON copy_executions(follower_account_id);
+
+-- MT4/MT5 have no cloud API - an EA running inside the actual terminal is
+-- the only way to place/modify/close orders there. It can push events out
+-- via WebRequest (reuses /api/webhook/trade, same as any other bridge), but
+-- it can't accept inbound connections, so the reverse direction (commanding
+-- an MT4/5 *follower* to open/close/modify) has to be pull-based: this
+-- table is the queue the EA polls (GET /api/bridge/commands) and reports
+-- back to (POST /api/bridge/commands/:id/ack).
+CREATE TABLE IF NOT EXISTS bridge_commands (
+  id UUID PRIMARY KEY,
+  execution_id UUID NOT NULL REFERENCES copy_executions(id),
+  follower_account_id UUID NOT NULL REFERENCES broker_accounts(id),
+  command_type VARCHAR(20) NOT NULL CHECK (command_type IN ('open', 'close', 'modify')),
+  symbol VARCHAR(40),
+  side VARCHAR(10) CHECK (side IN ('buy', 'sell')),
+  size NUMERIC(12, 4),
+  sl NUMERIC(14, 5),
+  tp NUMERIC(14, 5),
+  target_position_id VARCHAR(100),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'acked')),
+  result_status VARCHAR(20) CHECK (result_status IN ('executed', 'failed')),
+  result_position_id VARCHAR(100),
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  sent_at TIMESTAMP WITH TIME ZONE,
+  acked_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bridge_commands_follower_pending ON bridge_commands(follower_account_id, status);
