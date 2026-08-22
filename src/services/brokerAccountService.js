@@ -97,6 +97,21 @@ function getDecryptedCredentials(accountRow) {
   return cipher.decrypt(accountRow.credentials_encrypted);
 }
 
+// The webhook token is stored only as a hash, so a lost token can't be
+// recovered - this issues a new one and invalidates the old one in the same
+// update, rather than requiring the account to be deleted and recreated.
+async function regenerateWebhookToken(accountId) {
+  const webhookToken = crypto.randomBytes(24).toString('hex');
+  const result = await db.query(
+    `UPDATE broker_accounts SET webhook_token_hash = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [hashToken(webhookToken), accountId]
+  );
+  if (result.rows.length === 0) {
+    return null;
+  }
+  return { account: toPublicDTO(result.rows[0]), webhookToken };
+}
+
 async function updateStatus(accountId, status) {
   await db.query(`UPDATE broker_accounts SET status = $1, updated_at = NOW() WHERE id = $2`, [status, accountId]);
 }
@@ -115,6 +130,7 @@ module.exports = {
   getBrokerAccountByWebhookToken,
   listAccountsByPlatformAndRole,
   getDecryptedCredentials,
+  regenerateWebhookToken,
   updateStatus,
   updateBalance,
   toPublicDTO

@@ -45,7 +45,8 @@ router.post('/', async (req, res) => {
     });
 
     // webhookToken is only ever shown here, at creation time - it's stored
-    // hashed, not retrievable again, so the bridge/EA config must capture it now.
+    // hashed, not retrievable again. If it's lost, use
+    // POST /:id/webhook-token/regenerate below instead of recreating the account.
     return res.status(201).json({ account, webhookToken });
   } catch (error) {
     return res.status(400).json({ error: error.message });
@@ -59,6 +60,25 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Failed to list broker accounts:', error.message);
     return res.status(500).json({ error: 'Unable to list broker accounts.' });
+  }
+});
+
+// Invalidates the current webhook token and issues a new one - the only way
+// to recover from a lost token, since it's never stored anywhere but its
+// hash. Any bridge/EA still using the old token starts getting 401s
+// immediately and needs its config updated with the new one.
+router.post('/:id/webhook-token/regenerate', async (req, res) => {
+  try {
+    const account = await brokerAccountService.getBrokerAccountRowById(req.params.id);
+    if (!account || account.user_id !== req.user.sub) {
+      return res.status(404).json({ error: 'Broker account not found.' });
+    }
+
+    const result = await brokerAccountService.regenerateWebhookToken(req.params.id);
+    return res.json(result);
+  } catch (error) {
+    console.error('Failed to regenerate webhook token:', error.message);
+    return res.status(500).json({ error: 'Unable to regenerate webhook token.' });
   }
 });
 
