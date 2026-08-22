@@ -20,7 +20,7 @@ Pool.prototype.query = async function (text, params = []) {
     return { rows: [row] };
   }
   if (t.startsWith('UPDATE copy_trade_events')) return { rowCount: 1 };
-  if (t.startsWith('SELECT * FROM broker_accounts WHERE id')) return { rows: [] }; // forces early-return path, fan-out never reached in this test anyway if duplicate short-circuits first
+  if (t.startsWith('SELECT * FROM broker_accounts WHERE id')) return { rows: [{ id: 'acct-1', platform: 'tradelocker', status: 'active', balance: 10000 }] };
   throw new Error('Unmocked query: ' + t);
 };
 
