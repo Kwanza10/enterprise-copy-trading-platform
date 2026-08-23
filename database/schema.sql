@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS admin_alerts (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Webhook + poll-driven copy-trading hub (MT4/MT5/TradeLocker/NinjaTrader).
+-- Webhook + poll-driven copy-trading hub (MT4/MT5/TradeLocker).
 -- Note: "trade_events" is already taken above by the strategy-marketplace
 -- allocation feature (different shape: strategy_id/quantity/pnl, unrelated to
 -- raw broker-account trade mirroring), so this feature's event table is named
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS admin_alerts (
 CREATE TABLE IF NOT EXISTS broker_accounts (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id),
-  platform VARCHAR(20) NOT NULL CHECK (platform IN ('mt4', 'mt5', 'tradelocker', 'ninjatrader')),
+  platform VARCHAR(20) NOT NULL CHECK (platform IN ('mt4', 'mt5', 'tradelocker')),
   role VARCHAR(20) NOT NULL DEFAULT 'both' CHECK (role IN ('master', 'follower', 'both')),
   label VARCHAR(200),
   credentials_encrypted TEXT NOT NULL,
@@ -110,9 +110,9 @@ CREATE INDEX IF NOT EXISTS idx_broker_accounts_platform_role ON broker_accounts(
 CREATE TABLE IF NOT EXISTS symbol_mappings (
   id UUID PRIMARY KEY,
   user_id UUID REFERENCES users(id),
-  source_platform VARCHAR(20) NOT NULL CHECK (source_platform IN ('mt4', 'mt5', 'tradelocker', 'ninjatrader')),
+  source_platform VARCHAR(20) NOT NULL CHECK (source_platform IN ('mt4', 'mt5', 'tradelocker')),
   source_symbol VARCHAR(40) NOT NULL,
-  target_platform VARCHAR(20) NOT NULL CHECK (target_platform IN ('mt4', 'mt5', 'tradelocker', 'ninjatrader')),
+  target_platform VARCHAR(20) NOT NULL CHECK (target_platform IN ('mt4', 'mt5', 'tradelocker')),
   target_symbol VARCHAR(40) NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
