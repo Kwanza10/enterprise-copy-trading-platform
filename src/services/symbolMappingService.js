@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const db = require('../lib/db');
 
-const PLATFORMS = ['mt4', 'mt5', 'tradelocker', 'ninjatrader'];
+const PLATFORMS = ['mt4', 'mt5', 'tradelocker'];
 const COMMON_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'US30', 'NAS100'];
 
 function toDTO(row) {

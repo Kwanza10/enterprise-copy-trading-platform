@@ -29,7 +29,7 @@ function validatePayload(body) {
   return null;
 }
 
-// Bridges (MT4/5/NinjaTrader EAs) don't log in - each BrokerAccount carries
+// Bridges (MT4/5 EAs) don't log in - each BrokerAccount carries
 // its own webhook token, issued once at creation (POST /api/broker-accounts).
 router.post('/trade', async (req, res) => {
   const token = req.headers['x-webhook-token'];

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const db = require('../lib/db');
 const cipher = require('../lib/credentialCipher');
 
-const PLATFORMS = ['mt4', 'mt5', 'tradelocker', 'ninjatrader'];
+const PLATFORMS = ['mt4', 'mt5', 'tradelocker'];
 const ROLES = ['master', 'follower', 'both'];
 const ENVIRONMENTS = ['demo', 'live'];
 
