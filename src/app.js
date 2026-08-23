@@ -38,7 +38,26 @@ const { buildSystemHealth } = require('./services/systemHealth');
 const app = express();
 const server = http.createServer(app);
 
-app.use(helmet());
+// helmet()'s default Content-Security-Policy blocks two things dashboard.js
+// and dashboard.html rely on: script-src only allows same-origin <script
+// src>, so the Google Identity Services script tag needs an explicit
+// exception; and script-src-attr defaults to 'none', which blocks the
+// inline onclick="..." attributes the dashboard's dynamically-rendered
+// tables use (regenerateWebhookToken, removeAccount, approveRelationship,
+// updateRisk) - loosening only that one directive, not script-src itself,
+// still blocks any arbitrary inline <script> block from ever running.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'script-src': ["'self'", 'https://accounts.google.com'],
+      'script-src-attr': ["'unsafe-inline'"],
+      'frame-src': ["'self'", 'https://accounts.google.com'],
+      'connect-src': ["'self'", 'https://accounts.google.com'],
+      'img-src': ["'self'", 'data:', 'https://*.googleusercontent.com']
+    }
+  }
+}));
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
