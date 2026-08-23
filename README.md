@@ -7,7 +7,8 @@ The original project under the parent folder remains the base implementation tha
 
 ## Planned architecture
 - Multi-tenant user and account management
-- Broker integrations for MT5 / MetaTrader and API adapters
+- Broker integrations for MT4/MT5 (via the bridge EA in `mt-bridge-ea/` - see
+  its README) and TradeLocker (native REST API, already implemented)
 - Copy trading engine with risk controls
 - Real-time market and trade streaming
 - Strategy marketplace and performance analytics

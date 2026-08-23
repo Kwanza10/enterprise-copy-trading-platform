@@ -343,6 +343,19 @@
     }
   }
 
+  async function regenerateWebhookToken(id) {
+    if (!confirm('This invalidates the current webhook token immediately - any bridge/EA still using it will start failing until reconfigured. Continue?')) return;
+    try {
+      const data = await api('POST', '/api/broker-accounts/' + id + '/webhook-token/regenerate');
+      el.accountMessage.className = 'message success';
+      el.accountMessage.innerHTML =
+        'New webhook token (shown once - update your bridge EA / TradeLocker config now):<br>' +
+        '<div class="token-callout">' + data.webhookToken + '</div>';
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function loadAccounts() {
     try {
       const data = await api('GET', '/api/broker-accounts');
@@ -365,7 +378,8 @@
         accounts.map((a) =>
           '<tr><td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
           '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td>' +
-          '<td><button class="small danger" onclick="removeAccount(\'' + a.id + '\')">Remove</button></td></tr>'
+          '<td><button class="small" onclick="regenerateWebhookToken(\'' + a.id + '\')">Regenerate token</button> ' +
+          '<button class="small danger" onclick="removeAccount(\'' + a.id + '\')">Remove</button></td></tr>'
         ).join('') + '</tbody></table>';
     } catch (err) {
       el.accountsContainer.className = 'empty-state';

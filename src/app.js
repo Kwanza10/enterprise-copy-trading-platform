@@ -27,6 +27,7 @@ const brokerAccountRoutes = require('./routes/broker-accounts');
 const copyRelationshipRoutes = require('./routes/copy-relationships');
 const symbolMappingRoutes = require('./routes/symbol-mappings');
 const webhookRoutes = require('./routes/webhook');
+const mtBridgeRoutes = require('./routes/mtBridge');
 const tradeFeedRoutes = require('./routes/trade-feed');
 const tradeQueue = require('./lib/tradeQueue');
 const copyEngine = require('./services/copyEngine');
@@ -91,6 +92,7 @@ app.use('/api/broker-accounts', brokerAccountRoutes);
 app.use('/api/copy-relationships', copyRelationshipRoutes);
 app.use('/api/symbol-mappings', symbolMappingRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/bridge', mtBridgeRoutes);
 app.use('/api/trade-feed', tradeFeedRoutes);
 
 const wsServer = createWebSocketServer(server);
