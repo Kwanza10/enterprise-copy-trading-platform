@@ -223,8 +223,9 @@
       el.accountsContainer.innerHTML =
         '<table><thead><tr><th>ID</th><th>Label</th><th>Platform</th><th>Role</th><th>Env</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>' +
         accounts.map((a) =>
-          '<tr><td style="font-family:monospace;font-size:11px;">' + a.id +
-          ' <button class="small secondary" onclick="navigator.clipboard.writeText(\'' + a.id + '\')" title="Copy ID">Copy</button></td>' +
+          '<tr><td>' +
+          '<input readonly value="' + a.id + '" onclick="this.select()" ' +
+          'style="width:100%;font-family:monospace;font-size:11px;background:#0e1420;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;" /></td>' +
           '<td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
           '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td>' +
           '<td><button class="small" onclick="regenerateWebhookToken(\'' + a.id + '\')">Regenerate token</button> ' +
