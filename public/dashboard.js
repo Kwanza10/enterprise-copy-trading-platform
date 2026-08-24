@@ -1,6 +1,5 @@
   const REFRESH_INTERVAL_MS = 5000;
   let refreshTimer = null;
-  let cachedFollowerAccounts = [];
 
   const el = {
     jwtToken: document.getElementById('jwtToken'),
@@ -213,11 +212,6 @@
     try {
       const data = await api('GET', '/api/broker-accounts');
       const accounts = data.accounts || [];
-      cachedFollowerAccounts = accounts;
-
-      el.followerAccountId.innerHTML = accounts
-        .map((a) => '<option value="' + a.id + '">' + (a.label || a.platform) + ' (' + a.platform + ')</option>')
-        .join('');
 
       if (accounts.length === 0) {
         el.accountsContainer.className = 'empty-state';
@@ -227,9 +221,11 @@
 
       el.accountsContainer.className = '';
       el.accountsContainer.innerHTML =
-        '<table><thead><tr><th>Label</th><th>Platform</th><th>Role</th><th>Env</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>' +
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Platform</th><th>Role</th><th>Env</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>' +
         accounts.map((a) =>
-          '<tr><td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
+          '<tr><td style="font-family:monospace;font-size:11px;">' + a.id +
+          ' <button class="small secondary" onclick="navigator.clipboard.writeText(\'' + a.id + '\')" title="Copy ID">Copy</button></td>' +
+          '<td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
           '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td>' +
           '<td><button class="small" onclick="regenerateWebhookToken(\'' + a.id + '\')">Regenerate token</button> ' +
           '<button class="small danger" onclick="removeAccount(\'' + a.id + '\')">Remove</button></td></tr>'
