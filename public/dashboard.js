@@ -166,6 +166,124 @@
     }
   });
 
+  // Quick Add Multiple Accounts - a repeatable-row table so several
+  // master/follower accounts (MT4, MT5, or TradeLocker) can be registered in
+  // one pass instead of resubmitting the single-account form above for each
+  // one. Each row is a pair of <tr>s: the visible summary row, plus a
+  // TradeLocker-only credentials row that's hidden unless that row's
+  // platform is set to TradeLocker.
+  let bulkRowCounter = 0;
+
+  function toggleBulkPlatform(i) {
+    const platform = document.getElementById('bulkPlatform_' + i).value;
+    document.getElementById('bulkCredRow_' + i).style.display = platform === 'tradelocker' ? '' : 'none';
+  }
+
+  function removeBulkRow(i) {
+    const credRow = document.getElementById('bulkCredRow_' + i);
+    if (credRow) credRow.remove();
+    const row = document.getElementById('bulkRow_' + i);
+    if (row) row.remove();
+  }
+
+  function addBulkRow() {
+    const i = bulkRowCounter++;
+    const tbody = document.getElementById('bulkAccountsBody');
+
+    const tr = document.createElement('tr');
+    tr.id = 'bulkRow_' + i;
+    tr.innerHTML =
+      '<td><select id="bulkPlatform_' + i + '" onchange="toggleBulkPlatform(' + i + ')">' +
+        '<option value="mt4">MT4</option><option value="mt5">MT5</option><option value="tradelocker">TradeLocker</option>' +
+      '</select></td>' +
+      '<td><select id="bulkRole_' + i + '"><option value="master">Master</option><option value="follower">Follower</option><option value="both">Both</option></select></td>' +
+      '<td><input id="bulkLabel_' + i + '" type="text" placeholder="e.g. MT5 Follower #2 or account login number" /></td>' +
+      '<td><select id="bulkEnvironment_' + i + '"><option value="demo">Demo</option><option value="live">Live</option></select></td>' +
+      '<td><input id="bulkBalance_' + i + '" type="number" step="0.01" placeholder="10000" /></td>' +
+      '<td><button type="button" class="small danger" onclick="removeBulkRow(' + i + ')">Remove</button></td>';
+    tbody.appendChild(tr);
+
+    const credRow = document.createElement('tr');
+    credRow.id = 'bulkCredRow_' + i;
+    credRow.style.display = 'none';
+    credRow.innerHTML =
+      '<td colspan="6">' +
+      '<div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:10px;background:#0e1420;border:1px solid var(--border);border-radius:6px;padding:10px;">' +
+      '<div class="field"><label>TradeLocker Email</label><input id="bulkTlEmail_' + i + '" type="text" /></div>' +
+      '<div class="field"><label>TradeLocker Password</label><input id="bulkTlPassword_' + i + '" type="password" /></div>' +
+      '<div class="field"><label>Server</label><input id="bulkTlServer_' + i + '" type="text" /></div>' +
+      '<div class="field"><label>accountId (optional)</label><input id="bulkTlAccountId_' + i + '" type="text" /></div>' +
+      '<div class="field"><label>accNum (optional)</label><input id="bulkTlAccNum_' + i + '" type="text" /></div>' +
+      '</div></td>';
+    tbody.appendChild(credRow);
+  }
+
+  document.getElementById('bulkAddRowBtn').addEventListener('click', addBulkRow);
+  addBulkRow();
+  addBulkRow();
+
+  document.getElementById('bulkSubmitBtn').addEventListener('click', async () => {
+    const rows = [...document.querySelectorAll('#bulkAccountsBody tr[id^="bulkRow_"]')];
+    const bulkMessage = document.getElementById('bulkMessage');
+    const bulkResults = document.getElementById('bulkResults');
+
+    if (rows.length === 0) {
+      bulkMessage.className = 'message error';
+      bulkMessage.textContent = 'Add at least one row first.';
+      return;
+    }
+
+    bulkMessage.className = 'message';
+    bulkMessage.textContent = 'Adding ' + rows.length + ' account(s)...';
+
+    const results = [];
+    // Sequential, not Promise.all - keeps errors attributable to a specific
+    // row and avoids hammering the server with a burst of inserts.
+    for (const tr of rows) {
+      const idSuffix = tr.id.split('_')[1];
+      const platform = document.getElementById('bulkPlatform_' + idSuffix).value;
+      const role = document.getElementById('bulkRole_' + idSuffix).value;
+      const label = document.getElementById('bulkLabel_' + idSuffix).value.trim();
+      const environment = document.getElementById('bulkEnvironment_' + idSuffix).value;
+      const balance = Number(document.getElementById('bulkBalance_' + idSuffix).value) || 0;
+
+      let credentials;
+      if (platform === 'tradelocker') {
+        credentials = {
+          email: document.getElementById('bulkTlEmail_' + idSuffix).value.trim(),
+          password: document.getElementById('bulkTlPassword_' + idSuffix).value,
+          server: document.getElementById('bulkTlServer_' + idSuffix).value.trim(),
+          accountId: document.getElementById('bulkTlAccountId_' + idSuffix).value.trim(),
+          accNum: document.getElementById('bulkTlAccNum_' + idSuffix).value.trim()
+        };
+      } else {
+        credentials = { note: 'Bridge EA uses the webhook token below; no REST login required yet.' };
+      }
+
+      try {
+        const data = await api('POST', '/api/broker-accounts', { platform, role, label, environment, credentials, balance });
+        results.push({ ok: true, label: label || platform, webhookToken: data.webhookToken });
+      } catch (err) {
+        results.push({ ok: false, label: label || platform, error: err.message });
+      }
+    }
+
+    const succeeded = results.filter((r) => r.ok).length;
+    bulkMessage.className = succeeded === results.length ? 'message success' : 'message error';
+    bulkMessage.textContent = succeeded + ' of ' + results.length + ' account(s) added.';
+
+    bulkResults.innerHTML += results.map((r) =>
+      r.ok
+        ? '<div class="token-callout"><strong>' + r.label + '</strong> - webhook token (shown once):<br>' + r.webhookToken + '</div>'
+        : '<div class="message error"><strong>' + r.label + '</strong> failed: ' + r.error + '</div>'
+    ).join('');
+
+    document.getElementById('bulkAccountsBody').innerHTML = '';
+    addBulkRow();
+    addBulkRow();
+    loadAccounts();
+  });
+
   el.relationshipForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const masterAccountId = document.getElementById('masterAccountId').value.trim();
