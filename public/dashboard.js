@@ -11,6 +11,9 @@
     loginMessage: document.getElementById('loginMessage'),
     registerBtn: document.getElementById('registerBtn'),
     refreshStatus: document.getElementById('refreshStatus'),
+    loginView: document.getElementById('loginView'),
+    dashboardView: document.getElementById('dashboardView'),
+    logoutBtn: document.getElementById('logoutBtn'),
     accountsPanelMessage: document.getElementById('accountsPanelMessage'),
     accountsContainer: document.getElementById('accountsContainer'),
     relationshipForm: document.getElementById('relationshipForm'),
@@ -46,13 +49,35 @@
     return data;
   }
 
+  // Session is its own standalone first page - nothing else in the app
+  // renders until a token exists (via Register/Log In/Google/manual paste).
+  function showDashboard() {
+    el.loginView.style.display = 'none';
+    el.dashboardView.style.display = '';
+    el.logoutBtn.style.display = '';
+  }
+
+  function showLogin() {
+    el.loginView.style.display = '';
+    el.dashboardView.style.display = 'none';
+    el.logoutBtn.style.display = 'none';
+  }
+
   function applyToken(token, message) {
     el.jwtToken.value = token;
     localStorage.setItem('brokerssync_token', token);
     el.authMessage.textContent = message || 'Session connected.';
     el.authMessage.className = 'message success';
+    showDashboard();
     startAutoRefresh();
   }
+
+  el.logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('brokerssync_token');
+    el.jwtToken.value = '';
+    if (refreshTimer) clearInterval(refreshTimer);
+    showLogin();
+  });
 
   el.authForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -592,4 +617,7 @@
     refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
   }
 
-  if (storedToken) startAutoRefresh();
+  if (storedToken) {
+    showDashboard();
+    startAutoRefresh();
+  }
