@@ -99,6 +99,76 @@
   }
   .risk-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .risk-controls select, .risk-controls input { width: auto; min-width: 90px; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    width: min(680px, 100%);
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; }
+  .modal-close { background: none; padding: 4px 8px; font-size: 20px; line-height: 1; color: var(--muted); }
+  .modal-close:hover { color: var(--text); opacity: 1; }
+  .step-indicator { display: flex; align-items: center; margin: 20px 0 24px; }
+  .step-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .step-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #2a3646;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step-circle.active { background: var(--accent); color: #fff; }
+  .step-circle.done { background: var(--green); color: #fff; }
+  .step-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .step-line { flex: 1; height: 2px; background: #2a3646; margin: 0 8px 18px; }
+  .step-line.done { background: var(--green); }
+  .platform-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .platform-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .platform-card:hover { border-color: var(--accent); }
+  .platform-card.selected { border-color: var(--accent); background: rgba(59,130,246,0.1); }
+  .platform-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 10px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .modal-footer { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -140,49 +210,11 @@
 
   <div class="grid-2">
     <section class="panel">
-      <h2>Add Broker Account</h2>
-      <form id="accountForm">
-        <div class="field">
-          <label for="acctPlatform">Platform</label>
-          <select id="acctPlatform">
-            <option value="tradelocker">TradeLocker</option>
-            <option value="mt4">MT4</option>
-            <option value="mt5">MT5</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="acctRole">Role</label>
-          <select id="acctRole">
-            <option value="both">Both</option>
-            <option value="master">Master</option>
-            <option value="follower">Follower</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="acctEnvironment">Environment</label>
-          <select id="acctEnvironment">
-            <option value="demo">Demo</option>
-            <option value="live">Live</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="acctLabel">Label</label>
-          <input id="acctLabel" type="text" placeholder="My TradeLocker Demo" />
-        </div>
-        <div class="field">
-          <label for="acctBalance">Balance (for % of balance sizing)</label>
-          <input id="acctBalance" type="number" step="0.01" placeholder="10000" />
-        </div>
-        <div class="field" id="tlFields" style="grid-column: span 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-          <div class="field"><label for="tlEmail">TradeLocker Email</label><input id="tlEmail" type="text" /></div>
-          <div class="field"><label for="tlPassword">TradeLocker Password</label><input id="tlPassword" type="password" /></div>
-          <div class="field"><label for="tlServer">TradeLocker Server</label><input id="tlServer" type="text" /></div>
-          <div class="field"><label for="tlAccountId">TradeLocker accountId (optional)</label><input id="tlAccountId" type="text" placeholder="auto-detected if you have only one account" /></div>
-          <div class="field"><label for="tlAccNum">TradeLocker accNum (optional)</label><input id="tlAccNum" type="text" placeholder="auto-detected if you have only one account" /></div>
-        </div>
-        <div class="field"><button type="submit">Add Account</button></div>
-      </form>
-      <div class="message" id="accountMessage"></div>
+      <h2>Connections</h2>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 0;">
+        Connect a TradeLocker, MT4, or MT5 account in a few guided steps.
+      </p>
+      <button type="button" id="openConnectionModalBtn">+ Add Connection</button>
     </section>
 
     <section class="panel">
@@ -238,6 +270,7 @@
 
   <section class="panel">
     <h2>Broker Accounts</h2>
+    <div class="message" id="accountsPanelMessage"></div>
     <div id="accountsContainer" class="empty-state">Connect your session to load accounts.</div>
   </section>
 
@@ -257,6 +290,85 @@
     <div id="feedContainer" class="empty-state">--</div>
   </section>
 </main>
+
+<div class="modal-overlay" id="connectionModalOverlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 style="margin:0;font-size:16px;">Add Connection</h2>
+      <button type="button" class="modal-close" id="connectionModalClose">&times;</button>
+    </div>
+
+    <div class="step-indicator">
+      <div class="step-item">
+        <div class="step-circle" id="stepCircle1">1</div>
+        <div class="step-label">Platform</div>
+      </div>
+      <div class="step-line" id="stepLine1"></div>
+      <div class="step-item">
+        <div class="step-circle" id="stepCircle2">2</div>
+        <div class="step-label">Details</div>
+      </div>
+      <div class="step-line" id="stepLine2"></div>
+      <div class="step-item">
+        <div class="step-circle" id="stepCircle3">3</div>
+        <div class="step-label">Connect</div>
+      </div>
+    </div>
+
+    <div id="connStep1">
+      <p style="font-size:13px;color:var(--muted);margin-top:0;">Choose the platform you want to connect.</p>
+      <div class="platform-grid">
+        <div class="platform-card" data-platform="tradelocker" onclick="selectConnPlatform('tradelocker')">
+          <div class="platform-icon" style="background:#1a7a5e;">TL</div>
+          <div>TradeLocker</div>
+        </div>
+        <div class="platform-card" data-platform="mt4" onclick="selectConnPlatform('mt4')">
+          <div class="platform-icon" style="background:#2563eb;">4</div>
+          <div>MetaTrader 4</div>
+        </div>
+        <div class="platform-card" data-platform="mt5" onclick="selectConnPlatform('mt5')">
+          <div class="platform-icon" style="background:#4338ca;">5</div>
+          <div>MetaTrader 5</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="connStep2" style="display:none;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;">
+        <div class="field"><label for="connRole">Role</label>
+          <select id="connRole"><option value="both">Both</option><option value="master">Master</option><option value="follower">Follower</option></select>
+        </div>
+        <div class="field"><label for="connEnvironment">Environment</label>
+          <select id="connEnvironment"><option value="demo">Demo</option><option value="live">Live</option></select>
+        </div>
+        <div class="field"><label for="connLabel">Label</label><input id="connLabel" type="text" placeholder="My TradeLocker Demo" /></div>
+        <div class="field"><label for="connBalance">Balance (for % of balance sizing)</label><input id="connBalance" type="number" step="0.01" placeholder="10000" /></div>
+      </div>
+      <div class="field" id="connTlFields" style="margin-top:10px; display:none; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+        <div class="field"><label for="connTlEmail">TradeLocker Email</label><input id="connTlEmail" type="text" /></div>
+        <div class="field"><label for="connTlPassword">TradeLocker Password</label><input id="connTlPassword" type="password" /></div>
+        <div class="field"><label for="connTlServer">TradeLocker Server</label><input id="connTlServer" type="text" /></div>
+        <div class="field"><label for="connTlAccountId">accountId (optional)</label><input id="connTlAccountId" type="text" placeholder="auto-detected if you have only one account" /></div>
+        <div class="field"><label for="connTlAccNum">accNum (optional)</label><input id="connTlAccNum" type="text" placeholder="auto-detected if you have only one account" /></div>
+      </div>
+    </div>
+
+    <div id="connStep3" style="display:none;">
+      <div id="connSummary" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></div>
+      <div class="message" id="connResultMessage"></div>
+      <div id="connResultCallout"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="secondary" id="connModalCancelBtn">Cancel</button>
+      <div style="flex:1;"></div>
+      <button type="button" class="secondary" id="connModalBackBtn" style="display:none;">Back</button>
+      <button type="button" id="connModalNextBtn">Next</button>
+      <button type="button" id="connModalConnectBtn" style="display:none;">Connect</button>
+      <button type="button" id="connModalDoneBtn" style="display:none;">Done</button>
+    </div>
+  </div>
+</div>
 
 <script src="dashboard.js" defer></script>
 </body>

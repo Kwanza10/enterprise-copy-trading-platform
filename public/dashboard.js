@@ -11,8 +11,7 @@
     loginMessage: document.getElementById('loginMessage'),
     registerBtn: document.getElementById('registerBtn'),
     refreshStatus: document.getElementById('refreshStatus'),
-    accountForm: document.getElementById('accountForm'),
-    accountMessage: document.getElementById('accountMessage'),
+    accountsPanelMessage: document.getElementById('accountsPanelMessage'),
     accountsContainer: document.getElementById('accountsContainer'),
     relationshipForm: document.getElementById('relationshipForm'),
     relationshipMessage: document.getElementById('relationshipMessage'),
@@ -127,42 +126,152 @@
 
   window.addEventListener('load', initGoogleSignIn);
 
-  document.getElementById('acctPlatform').addEventListener('change', (e) => {
-    document.getElementById('tlFields').style.display = e.target.value === 'tradelocker' ? 'grid' : 'none';
+  // Add Connection modal - a guided Platform -> Details -> Connect wizard
+  // for adding a single broker connection (mirrors an "Add Connection"
+  // pattern used elsewhere: platform picker cards, then a details step,
+  // then a final connect step that shows the result inline).
+  let connPlatform = null;
+  let connStep = 1;
+
+  function resetConnectionModal() {
+    connPlatform = null;
+    document.querySelectorAll('.platform-card').forEach((c) => c.classList.remove('selected'));
+    document.getElementById('connLabel').value = '';
+    document.getElementById('connBalance').value = '';
+    document.getElementById('connTlEmail').value = '';
+    document.getElementById('connTlPassword').value = '';
+    document.getElementById('connTlServer').value = '';
+    document.getElementById('connTlAccountId').value = '';
+    document.getElementById('connTlAccNum').value = '';
+    document.getElementById('connResultMessage').textContent = '';
+    document.getElementById('connResultMessage').className = 'message';
+    document.getElementById('connResultCallout').innerHTML = '';
+  }
+
+  function openConnectionModal() {
+    resetConnectionModal();
+    goToConnStep(1);
+    document.getElementById('connectionModalOverlay').classList.add('open');
+  }
+
+  function closeConnectionModal() {
+    document.getElementById('connectionModalOverlay').classList.remove('open');
+  }
+
+  function selectConnPlatform(platform) {
+    connPlatform = platform;
+    document.querySelectorAll('.platform-card').forEach((c) => c.classList.toggle('selected', c.dataset.platform === platform));
+  }
+
+  function goToConnStep(n) {
+    connStep = n;
+    document.getElementById('connStep1').style.display = n === 1 ? '' : 'none';
+    document.getElementById('connStep2').style.display = n === 2 ? '' : 'none';
+    document.getElementById('connStep3').style.display = n === 3 ? '' : 'none';
+
+    [1, 2, 3].forEach((i) => {
+      const circle = document.getElementById('stepCircle' + i);
+      circle.className = 'step-circle' + (i < n ? ' done' : i === n ? ' active' : '');
+      circle.textContent = i < n ? '✓' : String(i);
+    });
+    document.getElementById('stepLine1').className = 'step-line' + (n > 1 ? ' done' : '');
+    document.getElementById('stepLine2').className = 'step-line' + (n > 2 ? ' done' : '');
+
+    document.getElementById('connModalBackBtn').style.display = n > 1 ? '' : 'none';
+    document.getElementById('connModalNextBtn').style.display = n < 3 ? '' : 'none';
+    document.getElementById('connModalConnectBtn').style.display = n === 3 ? '' : 'none';
+    document.getElementById('connModalDoneBtn').style.display = 'none';
+
+    if (n === 2) {
+      document.getElementById('connTlFields').style.display = connPlatform === 'tradelocker' ? 'grid' : 'none';
+    }
+    if (n === 3) {
+      const label = document.getElementById('connLabel').value.trim() || connPlatform;
+      const role = document.getElementById('connRole').value;
+      const environment = document.getElementById('connEnvironment').value;
+      document.getElementById('connSummary').textContent =
+        'Connecting "' + label + '" (' + connPlatform.toUpperCase() + ', ' + role + ', ' + environment + '). Click Connect to finish.';
+    }
+  }
+
+  document.getElementById('openConnectionModalBtn').addEventListener('click', openConnectionModal);
+  document.getElementById('connectionModalClose').addEventListener('click', closeConnectionModal);
+  document.getElementById('connModalCancelBtn').addEventListener('click', closeConnectionModal);
+  document.getElementById('connModalBackBtn').addEventListener('click', () => goToConnStep(connStep - 1));
+  document.getElementById('connModalDoneBtn').addEventListener('click', closeConnectionModal);
+
+  document.getElementById('connectionModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'connectionModalOverlay') closeConnectionModal();
   });
 
-  el.accountForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const platform = document.getElementById('acctPlatform').value;
-    const role = document.getElementById('acctRole').value;
-    const environment = document.getElementById('acctEnvironment').value;
-    const label = document.getElementById('acctLabel').value.trim();
-    const balance = Number(document.getElementById('acctBalance').value) || 0;
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('connectionModalOverlay').classList.contains('open')) closeConnectionModal();
+  });
 
-    let credentials = {};
-    if (platform === 'tradelocker') {
+  document.getElementById('connModalNextBtn').addEventListener('click', () => {
+    if (connStep === 1 && !connPlatform) {
+      alert('Pick a platform first.');
+      return;
+    }
+    if (connStep === 2) {
+      const label = document.getElementById('connLabel').value.trim();
+      if (!label) {
+        alert('Give this connection a label.');
+        return;
+      }
+      if (connPlatform === 'tradelocker') {
+        const email = document.getElementById('connTlEmail').value.trim();
+        const password = document.getElementById('connTlPassword').value;
+        const server = document.getElementById('connTlServer').value.trim();
+        if (!email || !password || !server) {
+          alert('TradeLocker email, password, and server are required.');
+          return;
+        }
+      }
+    }
+    goToConnStep(connStep + 1);
+  });
+
+  document.getElementById('connModalConnectBtn').addEventListener('click', async () => {
+    const role = document.getElementById('connRole').value;
+    const environment = document.getElementById('connEnvironment').value;
+    const label = document.getElementById('connLabel').value.trim();
+    const balance = Number(document.getElementById('connBalance').value) || 0;
+
+    let credentials;
+    if (connPlatform === 'tradelocker') {
       credentials = {
-        email: document.getElementById('tlEmail').value.trim(),
-        password: document.getElementById('tlPassword').value,
-        server: document.getElementById('tlServer').value.trim(),
-        accountId: document.getElementById('tlAccountId').value.trim(),
-        accNum: document.getElementById('tlAccNum').value.trim()
+        email: document.getElementById('connTlEmail').value.trim(),
+        password: document.getElementById('connTlPassword').value,
+        server: document.getElementById('connTlServer').value.trim(),
+        accountId: document.getElementById('connTlAccountId').value.trim(),
+        accNum: document.getElementById('connTlAccNum').value.trim()
       };
     } else {
       credentials = { note: 'Bridge EA uses the webhook token below; no REST login required yet.' };
     }
 
+    const connectBtn = document.getElementById('connModalConnectBtn');
+    connectBtn.disabled = true;
+    connectBtn.textContent = 'Connecting...';
+
     try {
-      const data = await api('POST', '/api/broker-accounts', { platform, role, label, environment, credentials, balance });
-      el.accountMessage.className = 'message success';
-      el.accountMessage.innerHTML =
-        'Account added.<div class="token-callout">Webhook token (shown once - configure this in your bridge EA / TradeLocker poller now):<br>' +
+      const data = await api('POST', '/api/broker-accounts', { platform: connPlatform, role, label, environment, credentials, balance });
+      document.getElementById('connResultMessage').className = 'message success';
+      document.getElementById('connResultMessage').textContent = 'Connected.';
+      document.getElementById('connResultCallout').innerHTML =
+        '<div class="token-callout">Webhook token (shown once - configure this in your bridge EA / TradeLocker poller now):<br>' +
         data.webhookToken + '</div>';
-      el.accountForm.reset();
+      document.getElementById('connModalConnectBtn').style.display = 'none';
+      document.getElementById('connModalBackBtn').style.display = 'none';
+      document.getElementById('connModalDoneBtn').style.display = '';
       loadAccounts();
     } catch (err) {
-      el.accountMessage.className = 'message error';
-      el.accountMessage.textContent = err.message;
+      document.getElementById('connResultMessage').className = 'message error';
+      document.getElementById('connResultMessage').textContent = err.message;
+    } finally {
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Connect';
     }
   });
 
@@ -317,8 +426,8 @@
     if (!confirm('This invalidates the current webhook token immediately - any bridge/EA still using it will start failing until reconfigured. Continue?')) return;
     try {
       const data = await api('POST', '/api/broker-accounts/' + id + '/webhook-token/regenerate');
-      el.accountMessage.className = 'message success';
-      el.accountMessage.innerHTML =
+      el.accountsPanelMessage.className = 'message success';
+      el.accountsPanelMessage.innerHTML =
         'New webhook token (shown once - update your bridge EA / TradeLocker config now):<br>' +
         '<div class="token-callout">' + data.webhookToken + '</div>';
     } catch (err) {
