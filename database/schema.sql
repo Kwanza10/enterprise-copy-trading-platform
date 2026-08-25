@@ -97,9 +97,22 @@ CREATE TABLE IF NOT EXISTS broker_accounts (
   environment VARCHAR(10) NOT NULL DEFAULT 'demo' CHECK (environment IN ('demo', 'live')),
   balance NUMERIC(14, 2) NOT NULL DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'error')),
+  last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- CREATE TABLE IF NOT EXISTS above is a no-op against an already-existing
+-- table, so this column needs its own idempotent add for databases that
+-- already ran an earlier version of this schema. Set at creation (a real
+-- connectivity proof for TradeLocker, whose credentials are login-checked
+-- synchronously) and refreshed on every authenticated call an MT4/5 EA or
+-- the TradeLocker poller makes for that account - see touchLastSeen() in
+-- brokerAccountService.js. Lets "Broker Accounts" show whether an account
+-- is actually still connected, not just whether it was ever created,
+-- which matters most for an MT4/5 follower: a successful poll produces no
+-- log line in the EA's Experts tab, so this is the only positive signal.
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_broker_accounts_user_id ON broker_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_broker_accounts_webhook_token_hash ON broker_accounts(webhook_token_hash);

@@ -435,6 +435,21 @@
     }
   }
 
+  // Relative "last seen" age, color-coded so a stale/never-connected
+  // MT4/5 account (whose EA gives no positive success signal of its own -
+  // a successful poll logs nothing in the terminal) stands out from one
+  // actively polling in every few seconds.
+  function lastSeenLabel(lastSeenAt) {
+    if (!lastSeenAt) return '<span style="color:var(--muted);">Never</span>';
+    const ageSec = Math.max(0, Math.floor((Date.now() - new Date(lastSeenAt).getTime()) / 1000));
+    const text = ageSec < 60 ? ageSec + 's ago'
+      : ageSec < 3600 ? Math.floor(ageSec / 60) + 'm ago'
+      : ageSec < 86400 ? Math.floor(ageSec / 3600) + 'h ago'
+      : Math.floor(ageSec / 86400) + 'd ago';
+    const color = ageSec < 120 ? 'var(--green)' : ageSec < 900 ? 'var(--amber)' : 'var(--red)';
+    return '<span style="color:' + color + ';">' + text + '</span>';
+  }
+
   async function loadAccounts() {
     try {
       const data = await api('GET', '/api/broker-accounts');
@@ -448,13 +463,13 @@
 
       el.accountsContainer.className = '';
       el.accountsContainer.innerHTML =
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Platform</th><th>Role</th><th>Env</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>' +
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Platform</th><th>Role</th><th>Env</th><th>Balance</th><th>Status</th><th>Last Seen</th><th></th></tr></thead><tbody>' +
         accounts.map((a) =>
           '<tr><td>' +
           '<input readonly value="' + a.id + '" onclick="this.select()" ' +
           'style="width:100%;font-family:monospace;font-size:11px;background:#0e1420;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;" /></td>' +
           '<td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
-          '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td>' +
+          '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td><td>' + lastSeenLabel(a.lastSeenAt) + '</td>' +
           '<td><button class="small" onclick="regenerateWebhookToken(\'' + a.id + '\')">Regenerate token</button> ' +
           '<button class="small danger" onclick="removeAccount(\'' + a.id + '\')">Remove</button></td></tr>'
         ).join('') + '</tbody></table>';

@@ -49,6 +49,10 @@ router.post('/trade', async (req, res) => {
     return res.status(401).json({ error: 'Invalid or inactive webhook token.' });
   }
 
+  brokerAccountService.touchLastSeen(account.id).catch((error) => {
+    console.error('Failed to update last-seen for webhook account', account.id, error.message);
+  });
+
   const validationError = validatePayload(req.body || {});
   if (validationError) {
     return res.status(400).json({ error: validationError });

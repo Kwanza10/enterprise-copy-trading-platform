@@ -172,6 +172,10 @@ async function runCycle(accountRow, ctx) {
       await copyEngine.processTradeEvent(event);
     }
 
+    brokerAccountService.touchLastSeen(accountRow.id).catch((error) => {
+      console.error(`[tradeLockerPoller] account=${accountRow.id} failed to update last-seen: ${error.message}`);
+    });
+
     console.log(
       `[tradeLockerPoller] account=${accountRow.id} cycleMs=${Date.now() - start} positions=${positions.length} events=${events.length}`
     );

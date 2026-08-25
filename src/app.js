@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const { createWebSocketServer } = require('./services/websocket');
+const db = require('./lib/db');
 const { seedData } = require('./lib/seedData');
 const authRoutes = require('./routes/auth');
 const accountRoutes = require('./routes/accounts');
@@ -130,11 +131,21 @@ tradeQueue.setProcessor(copyEngine.processTradeEvent);
 
 // DB-dependent startup work - never let a missing/unreachable Postgres
 // (e.g. local dev with no DB_* env vars set) crash the whole process.
-symbolMappingService.seedGlobalDefaults().catch((error) => {
-  console.error('Symbol mapping seed skipped (DB unavailable?):', error.message);
-});
-tradeLockerPoller.start().catch((error) => {
-  console.error('TradeLocker poller failed to start:', error.message);
-});
+// Schema application runs first and gates the rest, so a column/table
+// added to database/schema.sql actually exists on production before
+// anything else tries to read or write it - see applySchema() in
+// src/lib/db.js for why this needs to run here at all.
+db.applySchema()
+  .then(() => {
+    symbolMappingService.seedGlobalDefaults().catch((error) => {
+      console.error('Symbol mapping seed skipped:', error.message);
+    });
+    tradeLockerPoller.start().catch((error) => {
+      console.error('TradeLocker poller failed to start:', error.message);
+    });
+  })
+  .catch((error) => {
+    console.error('Schema apply skipped (DB unavailable?):', error.message);
+  });
 
 module.exports = { app, server, wsServer };

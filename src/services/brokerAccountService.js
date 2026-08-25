@@ -20,6 +20,7 @@ function toPublicDTO(row) {
     environment: row.environment,
     balance: Number(row.balance),
     status: row.status,
+    lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -120,6 +121,16 @@ async function updateBalance(accountId, balance) {
   await db.query(`UPDATE broker_accounts SET balance = $1, updated_at = NOW() WHERE id = $2`, [balance, accountId]);
 }
 
+// Called on every authenticated bridge/webhook call an account's token
+// makes (see mtBridge.js, webhook.js) and on every successful TradeLocker
+// poll cycle (tradeLockerPoller.js) - the only positive signal a follower
+// EA actually connected, since a successful poll produces no log line of
+// its own. Fire-and-forget from callers; a lost heartbeat update isn't
+// worth failing the request over.
+async function touchLastSeen(accountId) {
+  await db.query(`UPDATE broker_accounts SET last_seen_at = NOW() WHERE id = $1`, [accountId]);
+}
+
 module.exports = {
   PLATFORMS,
   ROLES,
@@ -133,5 +144,6 @@ module.exports = {
   regenerateWebhookToken,
   updateStatus,
   updateBalance,
+  touchLastSeen,
   toPublicDTO
 };

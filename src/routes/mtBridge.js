@@ -31,6 +31,10 @@ async function authenticate(req, res) {
     return null;
   }
 
+  brokerAccountService.touchLastSeen(account.id).catch((error) => {
+    console.error('Failed to update last-seen for bridge account', account.id, error.message);
+  });
+
   return account;
 }
 
