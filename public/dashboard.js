@@ -1,6 +1,22 @@
   const REFRESH_INTERVAL_MS = 5000;
   let refreshTimer = null;
 
+  const EYE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 4.22-5.19M9.9 4.24A9.12 9.12 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+  // Delegated so it works for password fields added later (bulk-add rows) -
+  // no per-field listener wiring needed.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pw-toggle');
+    if (!btn) return;
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const revealing = input.type === 'password';
+    input.type = revealing ? 'text' : 'password';
+    btn.innerHTML = revealing ? EYE_OFF_ICON : EYE_ICON;
+    btn.setAttribute('aria-label', revealing ? 'Hide' : 'Show');
+  });
+
   const el = {
     jwtToken: document.getElementById('jwtToken'),
     authForm: document.getElementById('authForm'),
@@ -344,7 +360,10 @@
       '<td colspan="6">' +
       '<div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:10px;background:#0e1420;border:1px solid var(--border);border-radius:6px;padding:10px;">' +
       '<div class="field"><label>TradeLocker Email</label><input id="bulkTlEmail_' + i + '" type="text" /></div>' +
-      '<div class="field"><label>TradeLocker Password</label><input id="bulkTlPassword_' + i + '" type="password" /></div>' +
+      '<div class="field"><label>TradeLocker Password</label><span class="pw-wrap">' +
+        '<input id="bulkTlPassword_' + i + '" type="password" />' +
+        '<button type="button" class="pw-toggle" data-target="bulkTlPassword_' + i + '" aria-label="Show password">' + EYE_ICON + '</button>' +
+      '</span></div>' +
       '<div class="field"><label>Server</label><input id="bulkTlServer_' + i + '" type="text" /></div>' +
       '<div class="field"><label>accountId (optional)</label><input id="bulkTlAccountId_' + i + '" type="text" /></div>' +
       '<div class="field"><label>accNum (optional)</label><input id="bulkTlAccNum_' + i + '" type="text" /></div>' +
