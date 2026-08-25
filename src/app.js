@@ -63,7 +63,17 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// No caching on dashboard.html/dashboard.js - express.static's defaults
+// (Last-Modified + ETag only, no Cache-Control) still let some browsers
+// serve a stale copy without revalidating, which has repeatedly meant a
+// deployed dashboard fix wasn't actually visible until a hard refresh.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 app.get('/health', (req, res) => {
   res.json({
