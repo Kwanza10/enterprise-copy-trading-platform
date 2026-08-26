@@ -204,6 +204,10 @@
 <main>
 <div id="loginView">
   <section class="panel" style="max-width: 480px; margin: 60px auto 0;">
+    <div style="background:#1e2a1b;border:1px solid #365a2a;border-radius:8px;padding:10px;margin-bottom:14px;font-size:12px;">
+      Diagnostic - tap this button:
+      <button type="button" style="margin-left:8px;" onclick="this.textContent='IT WORKED'; this.style.background='#22c55e';">Tap me</button>
+    </div>
     <h2>Session</h2>
     <p style="font-size: 13px; color: var(--muted); margin-top: 0;">
       New here? Enter an email and a password of your choosing below and click
@@ -410,6 +414,6 @@
   </div>
 </div>
 
-<script src="dashboard.js" defer></script>
+<script src="dashboard.js" defer onerror="document.body.insertAdjacentHTML('afterbegin', '&lt;div style=&quot;position:fixed;top:0;left:0;right:0;background:#7f1d1d;color:#fff;padding:10px 14px;font-family:monospace;font-size:13px;z-index:99999;&quot;&gt;dashboard.js FAILED TO LOAD (network error or blocked by something on this device) - this is NOT a code bug.&lt;/div&gt;')"></script>
 </body>
 </html>
