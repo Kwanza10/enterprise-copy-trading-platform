@@ -1,3 +1,14 @@
+  // On-page error banner - a user reporting "nothing happens" with no way
+  // to open dev tools (e.g. on a phone) has no way to hand back what's
+  // actually failing. This is the first thing in the file so it's
+  // registered before anything below it has a chance to throw.
+  window.addEventListener('error', (e) => {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#7f1d1d;color:#fff;padding:10px 14px;font-family:monospace;font-size:12px;z-index:99999;white-space:pre-wrap;';
+    banner.textContent = 'JS ERROR: ' + e.message + ' (' + e.filename + ':' + e.lineno + ':' + e.colno + ')';
+    document.body.prepend(banner);
+  });
+
   const REFRESH_INTERVAL_MS = 5000;
   let refreshTimer = null;
 
