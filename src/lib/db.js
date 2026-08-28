@@ -14,6 +14,16 @@ function getPool() {
       user: env.db.user,
       password: env.db.password
     });
+    // node-postgres emits 'error' on the pool for any idle client that hits
+    // a backend/network problem (e.g. Postgres terminating an idle
+    // connection - the 57P01 admin_shutdown seen crashing production).
+    // Without a listener here, that 'error' event has no handler and Node
+    // treats it as an uncaught exception, killing the whole process - this
+    // is *the* standard node-postgres gotcha and is what was behind pm2
+    // showing tens of thousands of restarts on production.
+    pool.on('error', (err) => {
+      console.error('Unexpected Postgres pool error (connection recovered automatically):', err.message);
+    });
   }
   return pool;
 }

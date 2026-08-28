@@ -24,4 +24,4 @@ jobs:
           host: ${{ secrets.PROD_VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          script: cd /home/brokerssync && git pull origin main && npm ci && pm2 restart brokerssync && sleep 3 && pm2 logs brokerssync --err --lines 100 --nostream && pm2 describe brokerssync
+          script: cd /home/brokerssync && git pull origin main && npm ci && pm2 restart brokerssync
