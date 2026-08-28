@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const { createWebSocketServer } = require('./services/websocket');
 const db = require('./lib/db');
 const { seedData } = require('./lib/seedData');
+const { loadUsersFromPostgres } = require('./lib/inMemoryStore');
 const authRoutes = require('./routes/auth');
 const accountRoutes = require('./routes/accounts');
 const brokerRoutes = require('./routes/brokers');
@@ -145,6 +146,11 @@ tradeQueue.setProcessor(copyEngine.processTradeEvent);
 // src/lib/db.js for why this needs to run here at all.
 db.applySchema()
   .then(() => {
+    loadUsersFromPostgres(db)
+      .then((count) => console.log(`Rehydrated ${count} user(s) from Postgres.`))
+      .catch((error) => {
+        console.error('User rehydration skipped (DB unavailable?):', error.message);
+      });
     symbolMappingService.seedGlobalDefaults().catch((error) => {
       console.error('Symbol mapping seed skipped:', error.message);
     });
