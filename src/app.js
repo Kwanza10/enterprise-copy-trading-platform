@@ -85,6 +85,14 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   }
 }));
 
+// express.static only serves index.html at '/' by default, and this app's
+// entry point is named dashboard.html - without this, visiting the bare
+// domain (e.g. https://brokerssync.com) 404s with Express's default
+// "Cannot GET /" instead of landing on the actual app.
+app.get('/', (req, res) => {
+  res.redirect('/dashboard.html');
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
