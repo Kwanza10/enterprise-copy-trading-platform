@@ -29,5 +29,11 @@ jobs:
             sudo systemctl reload caddy || sudo systemctl restart caddy
             sudo ufw allow 80/tcp || true
             sudo ufw allow 443/tcp || true
-            sleep 2
-            sudo systemctl status caddy --no-pager -l | head -30
+            echo '--- listening ports ---'
+            sudo ss -tlnp | grep -E ':80 |:443 ' || echo "NOTHING LISTENING ON 80/443"
+            echo '--- ufw status ---'
+            sudo ufw status
+            echo '--- caddy status ---'
+            sudo systemctl status caddy --no-pager -l | head -15
+            echo '--- caddy recent logs (cert issuance) ---'
+            sudo journalctl -u caddy --no-pager -n 60
