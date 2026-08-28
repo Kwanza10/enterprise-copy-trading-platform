@@ -1,17 +1,9 @@
-  // On-page error banner - a user reporting "nothing happens" with no way
-  // to open dev tools (e.g. on a phone) has no way to hand back what's
-  // actually failing. This is the first thing in the file so it's
-  // registered before anything below it has a chance to throw.
-  window.addEventListener('error', (e) => {
-    const banner = document.createElement('div');
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#7f1d1d;color:#fff;padding:10px 14px;font-family:monospace;font-size:12px;z-index:99999;white-space:pre-wrap;';
-    banner.textContent = 'JS ERROR: ' + e.message + ' (' + e.filename + ':' + e.lineno + ':' + e.colno + ')';
-    document.body.prepend(banner);
-  });
-
   const REFRESH_INTERVAL_MS = 5000;
   let refreshTimer = null;
 
+  // EYE_ICON (open eye) = text currently visible; EYE_OFF_ICON (closed/
+  // slashed eye) = text currently masked - matches every password field's
+  // default markup, which starts on EYE_OFF_ICON since fields start masked.
   const EYE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
   const EYE_OFF_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 4.22-5.19M9.9 4.24A9.12 9.12 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
@@ -24,7 +16,7 @@
     if (!input) return;
     const revealing = input.type === 'password';
     input.type = revealing ? 'text' : 'password';
-    btn.innerHTML = revealing ? EYE_OFF_ICON : EYE_ICON;
+    btn.innerHTML = revealing ? EYE_ICON : EYE_OFF_ICON;
     btn.setAttribute('aria-label', revealing ? 'Hide' : 'Show');
   });
 
@@ -48,7 +40,11 @@
     followerAccountId: document.getElementById('followerAccountId'),
     asMasterContainer: document.getElementById('asMasterContainer'),
     asFollowerContainer: document.getElementById('asFollowerContainer'),
-    feedContainer: document.getElementById('feedContainer')
+    feedContainer: document.getElementById('feedContainer'),
+    resetPasswordForm: document.getElementById('resetPasswordForm'),
+    resetEmail: document.getElementById('resetEmail'),
+    resetNewPassword: document.getElementById('resetNewPassword'),
+    resetMessage: document.getElementById('resetMessage')
   };
 
   const storedToken = localStorage.getItem('brokerssync_token');
@@ -141,6 +137,27 @@
 
   el.registerBtn.addEventListener('click', () => {
     loginOrRegister('/api/auth/register');
+  });
+
+  el.resetPasswordForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = el.resetEmail.value.trim();
+    const newPassword = el.resetNewPassword.value;
+    if (!email || !newPassword) {
+      el.resetMessage.className = 'message error';
+      el.resetMessage.textContent = 'Email and new password are required.';
+      return;
+    }
+    try {
+      const data = await api('POST', '/api/auth/reset-password', { email, newPassword });
+      el.resetMessage.className = 'message success';
+      el.resetMessage.textContent = 'Password reset.';
+      el.resetPasswordForm.reset();
+      applyToken(data.token, 'Signed in as ' + data.user.email + '.');
+    } catch (err) {
+      el.resetMessage.className = 'message error';
+      el.resetMessage.textContent = err.message;
+    }
   });
 
   // Only shows the button if the server has GOOGLE_CLIENT_ID configured -
@@ -373,7 +390,7 @@
       '<div class="field"><label>TradeLocker Email</label><input id="bulkTlEmail_' + i + '" type="text" /></div>' +
       '<div class="field"><label>TradeLocker Password</label><span class="pw-wrap">' +
         '<input id="bulkTlPassword_' + i + '" type="password" />' +
-        '<button type="button" class="pw-toggle" data-target="bulkTlPassword_' + i + '" aria-label="Show password">' + EYE_ICON + '</button>' +
+        '<button type="button" class="pw-toggle" data-target="bulkTlPassword_' + i + '" aria-label="Show password">' + EYE_OFF_ICON + '</button>' +
       '</span></div>' +
       '<div class="field"><label>Server</label><input id="bulkTlServer_' + i + '" type="text" /></div>' +
       '<div class="field"><label>accountId (optional)</label><input id="bulkTlAccountId_' + i + '" type="text" /></div>' +

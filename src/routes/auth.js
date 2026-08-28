@@ -95,6 +95,44 @@ router.post('/login', async (req, res) => {
   });
 });
 
+// No email verification exists anywhere in this app (register trusts any
+// email address as-is), so this mirrors that same trust level rather than
+// pretending to be a secure reset flow: given a known email, it just sets a
+// new password directly and signs the user in - no reset token, no email
+// round-trip. Consistent with everything else here, not a real-world
+// password-reset design.
+router.post('/reset-password', async (req, res) => {
+  const { email, newPassword } = req.body;
+
+  if (!email || !newPassword) {
+    return res.status(400).json({ error: 'Email and newPassword are required.' });
+  }
+
+  const user = [...users.values()].find((entry) => entry.email === email);
+  if (!user) {
+    return res.status(404).json({ error: 'No account found for that email.' });
+  }
+
+  user.password = await bcrypt.hash(newPassword, 10);
+  users.set(user.id, user);
+
+  try {
+    await db.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [user.password, user.id]);
+  } catch (error) {
+    console.error('Failed to persist reset password to Postgres (DB unavailable?):', error.message);
+  }
+
+  return res.json({
+    token: issueToken(user),
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      status: user.status
+    }
+  });
+});
+
 // Verifies the ID token Google Identity Services hands the frontend after a
 // successful "Sign in with Google" - this is the standard server-side check
 // (confirms the token is genuinely signed by Google and issued for *this*
