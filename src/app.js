@@ -68,10 +68,18 @@ app.use(morgan('dev'));
 // (Last-Modified + ETag only, no Cache-Control) still let some browsers
 // serve a stale copy without revalidating, which has repeatedly meant a
 // deployed dashboard fix wasn't actually visible until a hard refresh.
+// no-store (rather than no-cache) is used deliberately: no-cache still
+// permits a cache to store the response and revalidate via ETag, which
+// some browsers/carrier proxies do unreliably on plain HTTP. no-store
+// forbids caching the response at all, so every load is a fresh fetch.
+// Pragma/Expires are included for older or transparent HTTP proxies that
+// don't honor Cache-Control.
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
   }
 }));
