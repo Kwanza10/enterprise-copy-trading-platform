@@ -215,6 +215,40 @@
     document.getElementById('connResultMessage').textContent = '';
     document.getElementById('connResultMessage').className = 'message';
     document.getElementById('connResultCallout').innerHTML = '';
+    document.getElementById('connTlAccountPicker').style.display = 'none';
+    document.getElementById('connTlAccountPicker').innerHTML = '';
+    document.getElementById('connModalConnectBtn').disabled = false;
+  }
+
+  // Renders the accounts TradeLocker's own API returned for this login as
+  // clickable cards (name + currency) instead of making a user hunt down
+  // and type a raw accountId/accNum themselves - clicking one just fills
+  // those two hidden fields and unlocks Connect.
+  function renderTlAccountPicker(accounts) {
+    const picker = document.getElementById('connTlAccountPicker');
+    const connectBtn = document.getElementById('connModalConnectBtn');
+    connectBtn.disabled = true;
+    picker.style.display = '';
+    picker.innerHTML =
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">This login has multiple TradeLocker accounts - pick the one to connect:</div>' +
+      accounts
+        .map(
+          (a, i) =>
+            '<div class="tl-account-option" data-idx="' + i + '" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;">' +
+            '<strong>' + (a.name || 'Account ' + a.accountId) + '</strong> - ' + a.currency + ' (accountId ' + a.accountId + ')' +
+            '</div>'
+        )
+        .join('');
+    picker.querySelectorAll('.tl-account-option').forEach((el) => {
+      el.addEventListener('click', () => {
+        picker.querySelectorAll('.tl-account-option').forEach((o) => (o.style.borderColor = 'var(--border)'));
+        el.style.borderColor = 'var(--accent)';
+        const chosen = accounts[Number(el.dataset.idx)];
+        document.getElementById('connTlAccountId').value = chosen.accountId;
+        document.getElementById('connTlAccNum').value = chosen.accNum;
+        connectBtn.disabled = false;
+      });
+    });
   }
 
   function openConnectionModal() {
@@ -255,6 +289,9 @@
       document.getElementById('connTlFields').style.display = connPlatform === 'tradelocker' ? 'grid' : 'none';
     }
     if (n === 3) {
+      document.getElementById('connTlAccountPicker').style.display = 'none';
+      document.getElementById('connTlAccountPicker').innerHTML = '';
+      document.getElementById('connModalConnectBtn').disabled = false;
       const label = document.getElementById('connLabel').value.trim() || connPlatform;
       const role = document.getElementById('connRole').value;
       const environment = document.getElementById('connEnvironment').value;
@@ -277,7 +314,7 @@
     if (e.key === 'Escape' && document.getElementById('connectionModalOverlay').classList.contains('open')) closeConnectionModal();
   });
 
-  document.getElementById('connModalNextBtn').addEventListener('click', () => {
+  document.getElementById('connModalNextBtn').addEventListener('click', async () => {
     if (connStep === 1 && !connPlatform) {
       alert('Pick a platform first.');
       return;
@@ -295,6 +332,39 @@
         if (!email || !password || !server) {
           alert('TradeLocker email, password, and server are required.');
           return;
+        }
+
+        const accountId = document.getElementById('connTlAccountId').value.trim();
+        const accNum = document.getElementById('connTlAccNum').value.trim();
+        if (!accountId || !accNum) {
+          const nextBtn = document.getElementById('connModalNextBtn');
+          nextBtn.disabled = true;
+          nextBtn.textContent = 'Checking accounts...';
+          try {
+            const environment = document.getElementById('connEnvironment').value;
+            const data = await api('POST', '/api/broker-accounts/tradelocker/discover-accounts', {
+              credentials: { email, password, server },
+              environment
+            });
+            if (data.accounts.length === 0) {
+              alert('No TradeLocker accounts found for that login.');
+              return;
+            }
+            if (data.accounts.length === 1) {
+              document.getElementById('connTlAccountId').value = data.accounts[0].accountId;
+              document.getElementById('connTlAccNum').value = data.accounts[0].accNum;
+            } else {
+              goToConnStep(3);
+              renderTlAccountPicker(data.accounts);
+              return;
+            }
+          } catch (err) {
+            alert(err.message);
+            return;
+          } finally {
+            nextBtn.disabled = false;
+            nextBtn.textContent = 'Next';
+          }
         }
       }
     }

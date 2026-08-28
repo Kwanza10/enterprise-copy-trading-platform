@@ -425,13 +425,19 @@
           </span>
         </div>
         <div class="field"><label for="connTlServer">TradeLocker Server</label><input id="connTlServer" type="text" /></div>
-        <div class="field"><label for="connTlAccountId">accountId (optional)</label><input id="connTlAccountId" type="text" placeholder="auto-detected if you have only one account" /></div>
-        <div class="field"><label for="connTlAccNum">accNum (optional)</label><input id="connTlAccNum" type="text" placeholder="auto-detected if you have only one account" /></div>
       </div>
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);">Advanced: I already know my accountId/accNum</summary>
+        <div class="field" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;margin-top:8px;">
+          <div class="field"><label for="connTlAccountId">accountId</label><input id="connTlAccountId" type="text" /></div>
+          <div class="field"><label for="connTlAccNum">accNum</label><input id="connTlAccNum" type="text" /></div>
+        </div>
+      </details>
     </div>
 
     <div id="connStep3" style="display:none;">
       <div id="connSummary" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></div>
+      <div id="connTlAccountPicker" style="display:none;margin-bottom:14px;"></div>
       <div class="message" id="connResultMessage"></div>
       <div id="connResultCallout"></div>
     </div>

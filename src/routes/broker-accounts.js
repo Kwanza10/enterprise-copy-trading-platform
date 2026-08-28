@@ -7,6 +7,37 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// Lets the dashboard show a user their actual TradeLocker sub-accounts
+// (name/currency, not the raw accountId/accNum they'd otherwise have to
+// know) so they can just click the right one instead of hitting the
+// "Multiple TradeLocker accounts found" error from POST / below and having
+// to manually copy accountId/accNum out of it.
+router.post('/tradelocker/discover-accounts', async (req, res) => {
+  const { credentials, environment } = req.body;
+
+  if (!credentials || !credentials.email || !credentials.password || !credentials.server) {
+    return res.status(400).json({ error: 'TradeLocker email, password, and server are required.' });
+  }
+
+  try {
+    const session = await tradeLockerService.authenticate(credentials, environment || 'demo');
+    const accounts = await tradeLockerService.listAccounts(session);
+    const active = accounts.filter((a) => a.status === 'ACTIVE');
+    const candidates = active.length > 0 ? active : accounts;
+    return res.json({
+      accounts: candidates.map((a) => ({
+        accountId: a.id,
+        accNum: a.accNum,
+        name: a.name,
+        currency: a.currency,
+        status: a.status
+      }))
+    });
+  } catch (error) {
+    return res.status(400).json({ error: `TradeLocker login failed: ${error.message}` });
+  }
+});
+
 router.post('/', async (req, res) => {
   const { platform, role, label, environment, credentials, balance } = req.body;
 
