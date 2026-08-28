@@ -1,0 +1,33 @@
+name: One-time HTTPS setup (Caddy reverse proxy)
+on:
+  workflow_dispatch: {}
+jobs:
+  setup-https:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install and configure Caddy on the VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            if ! command -v caddy >/dev/null 2>&1; then
+              sudo apt update
+              sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+              sudo apt update
+              sudo apt install -y caddy
+            fi
+            echo 'brokerssync.com, www.brokerssync.com {
+                reverse_proxy localhost:3000
+            }' | sudo tee /etc/caddy/Caddyfile
+            sudo systemctl enable caddy
+            sudo systemctl reload caddy || sudo systemctl restart caddy
+            sudo ufw allow 80/tcp || true
+            sudo ufw allow 443/tcp || true
+            sleep 2
+            sudo systemctl status caddy --no-pager -l | head -30
