@@ -361,15 +361,49 @@
       <p style="font-size:13px;color:var(--muted);margin-top:0;">Choose the platform you want to connect.</p>
       <div class="platform-grid">
         <div class="platform-card" data-platform="tradelocker" onclick="selectConnPlatform('tradelocker')">
-          <div class="platform-icon" style="background:#1a7a5e;">TL</div>
+          <div class="platform-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48">
+              <rect width="48" height="48" rx="10" fill="#0f9c86"/>
+              <path d="M10 30 L18 22 L24 27 L38 12" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <path d="M30 12 L38 12 L38 20" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <circle cx="10" cy="30" r="2.4" fill="#fff"/>
+              <circle cx="24" cy="27" r="2.4" fill="#fff"/>
+            </svg>
+          </div>
           <div>TradeLocker</div>
         </div>
         <div class="platform-card" data-platform="mt4" onclick="selectConnPlatform('mt4')">
-          <div class="platform-icon" style="background:#2563eb;">4</div>
+          <div class="platform-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48">
+              <rect width="48" height="48" rx="10" fill="#0b1220"/>
+              <g>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#f7931a" transform="rotate(0 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#2563eb" transform="rotate(90 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#16a34a" transform="rotate(180 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#dc2626" transform="rotate(270 24 24)"/>
+              </g>
+              <circle cx="24" cy="24" r="4.5" fill="#0b1220"/>
+              <circle cx="36" cy="36" r="8" fill="#0b1220"/>
+              <text x="36" y="40" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial, sans-serif">4</text>
+            </svg>
+          </div>
           <div>MetaTrader 4</div>
         </div>
         <div class="platform-card" data-platform="mt5" onclick="selectConnPlatform('mt5')">
-          <div class="platform-icon" style="background:#4338ca;">5</div>
+          <div class="platform-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48">
+              <rect width="48" height="48" rx="10" fill="#0b1220"/>
+              <g>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#38bdf8" transform="rotate(0 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#0ea5e9" transform="rotate(90 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#0284c7" transform="rotate(180 24 24)"/>
+                <ellipse cx="24" cy="14" rx="6" ry="10" fill="#075985" transform="rotate(270 24 24)"/>
+              </g>
+              <circle cx="24" cy="24" r="4.5" fill="#0b1220"/>
+              <circle cx="36" cy="36" r="8" fill="#0b1220"/>
+              <text x="36" y="40" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial, sans-serif">5</text>
+            </svg>
+          </div>
           <div>MetaTrader 5</div>
         </div>
       </div>
