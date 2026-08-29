@@ -129,4 +129,23 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Undoes DELETE /:id above - the row, its encrypted credentials, and its
+// webhook token hash were never actually deleted, so this just flips
+// status back rather than requiring the account to be recreated from
+// scratch (which would also mint a new id, breaking any copy relationship
+// already pointing at the old one).
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const account = await brokerAccountService.getBrokerAccountRowById(req.params.id);
+    if (!account || account.user_id !== req.user.sub) {
+      return res.status(404).json({ error: 'Broker account not found.' });
+    }
+    await brokerAccountService.updateStatus(req.params.id, 'active');
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Failed to restore broker account:', error.message);
+    return res.status(500).json({ error: 'Unable to restore broker account.' });
+  }
+});
+
 module.exports = router;

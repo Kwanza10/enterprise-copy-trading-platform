@@ -35,6 +35,9 @@
     logoutBtn: document.getElementById('logoutBtn'),
     accountsPanelMessage: document.getElementById('accountsPanelMessage'),
     accountsContainer: document.getElementById('accountsContainer'),
+    removedAccountsDetails: document.getElementById('removedAccountsDetails'),
+    removedAccountsSummary: document.getElementById('removedAccountsSummary'),
+    removedAccountsContainer: document.getElementById('removedAccountsContainer'),
     relationshipForm: document.getElementById('relationshipForm'),
     relationshipMessage: document.getElementById('relationshipMessage'),
     followerAccountId: document.getElementById('followerAccountId'),
@@ -564,6 +567,15 @@
     }
   }
 
+  async function restoreAccount(id) {
+    try {
+      await api('POST', '/api/broker-accounts/' + id + '/restore');
+      loadAccounts();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function regenerateWebhookToken(id) {
     if (!confirm('This invalidates the current webhook token immediately - any bridge/EA still using it will start failing until reconfigured. Continue?')) return;
     try {
@@ -598,8 +610,24 @@
       // "Remove" soft-deletes (status -> disabled) rather than actually
       // deleting the row, so past TradeEvents/CopyExecutions that reference
       // it stay intact - but showing disabled accounts here made Remove
-      // look broken, since the row never left the list. Hide them instead.
-      const accounts = (data.accounts || []).filter((a) => a.status !== 'disabled');
+      // look broken, since the row never left the list. Hide them from the
+      // main table; they're still reachable (and restorable) below.
+      const allAccounts = data.accounts || [];
+      const accounts = allAccounts.filter((a) => a.status !== 'disabled');
+      const removed = allAccounts.filter((a) => a.status === 'disabled');
+
+      if (removed.length > 0) {
+        el.removedAccountsDetails.style.display = '';
+        el.removedAccountsSummary.textContent = removed.length + ' removed account' + (removed.length === 1 ? '' : 's') + ' - click to restore';
+        el.removedAccountsContainer.innerHTML = removed.map((a) =>
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">' +
+          '<span>' + (a.label || a.platform + ' ' + a.role) + ' (' + a.platform + ', ' + a.role + ')</span>' +
+          '<button class="small" onclick="restoreAccount(\'' + a.id + '\')">Restore</button></div>'
+        ).join('');
+      } else {
+        el.removedAccountsDetails.style.display = 'none';
+        el.removedAccountsContainer.innerHTML = '';
+      }
 
       if (accounts.length === 0) {
         el.accountsContainer.className = 'empty-state';
