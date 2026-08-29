@@ -595,7 +595,11 @@
   async function loadAccounts() {
     try {
       const data = await api('GET', '/api/broker-accounts');
-      const accounts = data.accounts || [];
+      // "Remove" soft-deletes (status -> disabled) rather than actually
+      // deleting the row, so past TradeEvents/CopyExecutions that reference
+      // it stay intact - but showing disabled accounts here made Remove
+      // look broken, since the row never left the list. Hide them instead.
+      const accounts = (data.accounts || []).filter((a) => a.status !== 'disabled');
 
       if (accounts.length === 0) {
         el.accountsContainer.className = 'empty-state';
