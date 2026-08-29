@@ -1,5 +1,10 @@
   const REFRESH_INTERVAL_MS = 5000;
   let refreshTimer = null;
+  // Set when a 401 forces the user back to login while the Add Connection
+  // modal was open mid-fill - lets applyToken() re-show it (without
+  // resetConnectionModal(), which would wipe what they'd typed) once they
+  // log back in, instead of leaving it silently closed.
+  let reopenConnectionModalAfterLogin = false;
 
   // EYE_ICON (open eye) = text currently visible; EYE_OFF_ICON (closed/
   // slashed eye) = text currently masked - matches every password field's
@@ -70,6 +75,30 @@
     const isJson = res.headers.get('content-type')?.includes('application/json');
     const data = isJson ? await res.json() : null;
     if (!res.ok) {
+      // A 401 here means the JWT itself expired (8h lifetime) or is invalid
+      // - not a TradeLocker/broker-side error, even though it can surface
+      // mid-flow inside e.g. the Add Connection modal. Previously this just
+      // threw the raw "Invalid or expired token." backend string wherever
+      // the failing call happened, leaving the user stuck in a modal with a
+      // confusing error and no obvious next step. Log them out and back to
+      // the login view with a clear explanation instead.
+      if (res.status === 401) {
+        localStorage.removeItem('brokerssync_token');
+        // The modal overlay is a page-level sibling of dashboardView, not a
+        // descendant, so hiding dashboardView in showLogin() below does NOT
+        // hide it - it would otherwise sit on top of the login form and
+        // block it. Close it, but only reset/clear its fields on the way
+        // back in (openConnectionModal() would wipe what's already typed).
+        const modalOverlay = document.getElementById('connectionModalOverlay');
+        if (modalOverlay.classList.contains('open')) {
+          reopenConnectionModalAfterLogin = true;
+          modalOverlay.classList.remove('open');
+        }
+        showLogin();
+        el.loginMessage.className = 'message error';
+        el.loginMessage.textContent = 'Your session expired - please log in again, then retry what you were doing.';
+        throw new Error('Session expired - please log in again.');
+      }
       throw new Error((data && data.error) || res.statusText);
     }
     return data;
@@ -96,6 +125,10 @@
     el.authMessage.className = 'message success';
     showDashboard();
     startAutoRefresh();
+    if (reopenConnectionModalAfterLogin) {
+      reopenConnectionModalAfterLogin = false;
+      document.getElementById('connectionModalOverlay').classList.add('open');
+    }
   }
 
   el.logoutBtn.addEventListener('click', () => {
