@@ -20,8 +20,7 @@ router.post('/tradelocker/discover-accounts', async (req, res) => {
   }
 
   try {
-    const session = await tradeLockerService.authenticate(credentials, environment || 'demo');
-    const accounts = await tradeLockerService.listAccounts(session);
+    const accounts = await tradeLockerService.authenticateAndListAccounts(credentials, environment || 'demo');
     const active = accounts.filter((a) => a.status === 'ACTIVE');
     const candidates = active.length > 0 ? active : accounts;
     return res.json({

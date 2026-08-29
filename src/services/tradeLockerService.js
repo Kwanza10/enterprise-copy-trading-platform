@@ -68,6 +68,25 @@ async function listAccounts(session) {
   return payload.accounts || [];
 }
 
+// A cached session (see authenticate()'s sessionCache) can be invalidated by
+// TradeLocker itself before our locally-tracked expireDate says it should be
+// (e.g. logging into the same account elsewhere) - calls made with it then
+// fail with TradeLocker's own "Invalid or expired token" error even though
+// the email/password are fine. Evict the stale entry and log in fresh once
+// rather than surfacing that as a credentials failure.
+async function authenticateAndListAccounts(credentials, environment) {
+  const key = fingerprint(credentials, environment);
+  try {
+    const session = await authenticate(credentials, environment);
+    return await listAccounts(session);
+  } catch (error) {
+    if (!/invalid or expired token/i.test(error.message)) throw error;
+    sessionCache.delete(key);
+    const session = await authenticate(credentials, environment);
+    return listAccounts(session);
+  }
+}
+
 // /trade/* endpoints require an accNum header identifying which of the
 // login's accounts to act on - TradeLocker's docs don't expose a "default
 // account" flag, so auto-picking is only safe when exactly one account
@@ -78,8 +97,7 @@ async function resolveAccountSelection(credentials, environment) {
     return { accountId: credentials.accountId, accNum: credentials.accNum };
   }
 
-  const session = await authenticate(credentials, environment);
-  const accounts = await listAccounts(session);
+  const accounts = await authenticateAndListAccounts(credentials, environment);
   const active = accounts.filter((a) => a.status === 'ACTIVE');
   const candidates = active.length > 0 ? active : accounts;
 
@@ -262,6 +280,7 @@ async function executeTrade({ credentials, environment, accountId, accNum, symbo
 module.exports = {
   authenticate,
   listAccounts,
+  authenticateAndListAccounts,
   resolveAccountSelection,
   listInstruments,
   resolveInstrument,
