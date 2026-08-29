@@ -421,14 +421,14 @@
         <div class="field"><label for="connBalance">Balance (for % of balance sizing)</label><input id="connBalance" type="number" step="0.01" placeholder="10000" /></div>
       </div>
       <div class="field" id="connTlFields" style="margin-top:10px; display:none; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-        <div class="field"><label for="connTlEmail">TradeLocker Email</label><input id="connTlEmail" type="text" /></div>
+        <div class="field"><label for="connTlEmail">TradeLocker Email</label><input id="connTlEmail" type="text" name="tl-login-email" autocomplete="off" /></div>
         <div class="field"><label for="connTlPassword">TradeLocker Password</label>
           <span class="pw-wrap">
-            <input id="connTlPassword" type="password" />
+            <input id="connTlPassword" type="password" name="tl-login-password" autocomplete="new-password" />
             <button type="button" class="pw-toggle" data-target="connTlPassword" aria-label="Show password"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 4.22-5.19M9.9 4.24A9.12 9.12 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
           </span>
         </div>
-        <div class="field"><label for="connTlServer">TradeLocker Server</label><input id="connTlServer" type="text" /></div>
+        <div class="field"><label for="connTlServer">TradeLocker Server</label><input id="connTlServer" type="text" name="tl-login-server" autocomplete="off" /></div>
       </div>
       <details style="margin-top:10px;">
         <summary style="cursor:pointer;font-size:12px;color:var(--muted);">Advanced: I already know my accountId/accNum</summary>
