@@ -314,13 +314,14 @@
     <h2>Quick Add Multiple Accounts</h2>
     <p style="font-size: 13px; color: var(--muted); margin-top: 0;">
       Add several master and follower accounts in one go - handy when one master needs to push
-      to more than one follower account. MT4/MT5 rows just need a role, label/account number,
-      and balance (the EA connects later via its own webhook token, shown per row once added).
+      to more than one follower account. MT4/MT5 rows need a label and their actual account
+      login number (used to stop the same account being added twice under different labels),
+      plus a balance (the EA connects later via its own webhook token, shown per row once added).
       Pick TradeLocker for a row to reveal its login fields (email, password, server) inline.
     </p>
     <div style="overflow-x: auto;">
       <table>
-        <thead><tr><th style="width:110px;">Platform</th><th style="width:110px;">Role</th><th>Label / Account #</th><th style="width:110px;">Environment</th><th style="width:130px;">Balance</th><th></th></tr></thead>
+        <thead><tr><th style="width:110px;">Platform</th><th style="width:110px;">Role</th><th>Label</th><th style="width:140px;">Account #</th><th style="width:110px;">Environment</th><th style="width:130px;">Balance</th><th></th></tr></thead>
         <tbody id="bulkAccountsBody"></tbody>
       </table>
     </div>

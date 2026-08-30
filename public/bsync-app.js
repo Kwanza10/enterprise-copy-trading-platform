@@ -494,7 +494,8 @@
         '<option value="mt4">MT4</option><option value="mt5">MT5</option><option value="tradelocker">TradeLocker</option>' +
       '</select></td>' +
       '<td><select id="bulkRole_' + i + '"><option value="master">Master</option><option value="follower">Follower</option><option value="both">Both</option></select></td>' +
-      '<td><input id="bulkLabel_' + i + '" type="text" placeholder="e.g. MT5 Follower #2 or account login number" /></td>' +
+      '<td><input id="bulkLabel_' + i + '" type="text" placeholder="e.g. MT5 Follower #2" /></td>' +
+      '<td><input id="bulkAccountNumber_' + i + '" type="text" placeholder="account login number" /></td>' +
       '<td><select id="bulkEnvironment_' + i + '"><option value="demo">Demo</option><option value="live">Live</option></select></td>' +
       '<td><input id="bulkBalance_' + i + '" type="number" step="0.01" placeholder="10000" /></td>' +
       '<td><button type="button" class="small danger" onclick="removeBulkRow(' + i + ')">Remove</button></td>';
@@ -504,7 +505,7 @@
     credRow.id = 'bulkCredRow_' + i;
     credRow.style.display = 'none';
     credRow.innerHTML =
-      '<td colspan="6">' +
+      '<td colspan="7">' +
       '<div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:10px;background:#0e1420;border:1px solid var(--border);border-radius:6px;padding:10px;">' +
       '<div class="field"><label>TradeLocker Email</label><input id="bulkTlEmail_' + i + '" type="text" /></div>' +
       '<div class="field"><label>TradeLocker Password</label><span class="pw-wrap">' +
@@ -544,11 +545,12 @@
       const platform = document.getElementById('bulkPlatform_' + idSuffix).value;
       const role = document.getElementById('bulkRole_' + idSuffix).value;
       const label = document.getElementById('bulkLabel_' + idSuffix).value.trim();
+      const accountNumber = document.getElementById('bulkAccountNumber_' + idSuffix).value.trim();
       const environment = document.getElementById('bulkEnvironment_' + idSuffix).value;
       const balance = Number(document.getElementById('bulkBalance_' + idSuffix).value) || 0;
 
       if (!label) {
-        results.push({ ok: false, label: platform + ' row', error: 'Skipped - enter a label/account number first.' });
+        results.push({ ok: false, label: platform + ' row', error: 'Skipped - enter a label first.' });
         continue;
       }
 
@@ -562,7 +564,15 @@
           accNum: document.getElementById('bulkTlAccNum_' + idSuffix).value.trim()
         };
       } else {
-        credentials = { note: 'Bridge EA uses the webhook token below; no REST login required yet.' };
+        // MT4/MT5 have no login to check, so this account number is the
+        // only thing that identifies the real underlying account - without
+        // it the same account could be added twice under two different
+        // labels (see assertNotDuplicateAccount in brokerAccountService.js).
+        if (!accountNumber) {
+          results.push({ ok: false, label, error: 'Skipped - enter the account\'s login number first.' });
+          continue;
+        }
+        credentials = { accountNumber, note: 'Bridge EA uses the webhook token below; no REST login required yet.' };
       }
 
       try {

@@ -51,6 +51,48 @@ async function assertPrivateMasterSlotAvailable(userId) {
   }
 }
 
+// Identifies the real underlying account regardless of what label it's
+// given - reusing the same identity here (TradeLocker's own accountId +
+// accNum, or an MT4/MT5 account's login number typed into Quick Add's
+// Account # field) would silently create a second row copying the exact
+// same trades twice. credentials_encrypted has to be decrypted per row to
+// compare since none of this is stored in its own column.
+function sameAccountIdentity(platform, a, b) {
+  if (platform === 'tradelocker') {
+    return a.accountId && a.accNum && String(a.accountId) === String(b.accountId) && String(a.accNum) === String(b.accNum);
+  }
+  return a.accountNumber && String(a.accountNumber) === String(b.accountNumber);
+}
+
+async function assertNotDuplicateAccount(userId, platform, environment, credentials) {
+  const hasIdentity = platform === 'tradelocker'
+    ? credentials.accountId && credentials.accNum
+    : credentials.accountNumber;
+  if (!hasIdentity) return;
+
+  const result = await db.query(
+    `SELECT id, label, credentials_encrypted FROM broker_accounts
+     WHERE user_id = $1 AND platform = $2 AND environment = $3 AND status = 'active'`,
+    [userId, platform, environment || 'demo']
+  );
+
+  for (const row of result.rows) {
+    let existing;
+    try {
+      existing = cipher.decrypt(row.credentials_encrypted);
+    } catch (error) {
+      continue;
+    }
+    if (sameAccountIdentity(platform, credentials, existing)) {
+      const identity = platform === 'tradelocker' ? `accountId=${credentials.accountId}` : `account #${credentials.accountNumber}`;
+      throw new Error(
+        `This account (${identity}) is already connected as "${row.label || row.id}". ` +
+        `Remove that one first if you want to reconnect it under a different label.`
+      );
+    }
+  }
+}
+
 async function createBrokerAccount({ userId, platform, role, label, environment, credentials, balance, isPublic }) {
   if (!PLATFORMS.includes(platform)) {
     throw new Error(`platform must be one of: ${PLATFORMS.join(', ')}`);
@@ -70,6 +112,8 @@ async function createBrokerAccount({ userId, platform, role, label, environment,
   if (!label || !label.trim()) {
     throw new Error('label is required.');
   }
+
+  await assertNotDuplicateAccount(userId, platform, environment, credentials);
 
   const resolvedRole = role || 'both';
   const resolvedIsPublic = Boolean(isPublic);
