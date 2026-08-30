@@ -64,6 +64,12 @@ async function createBrokerAccount({ userId, platform, role, label, environment,
   if (!credentials || typeof credentials !== 'object') {
     throw new Error('credentials object is required.');
   }
+  // MT4/MT5 accounts have no credentials to fail login on (the EA connects
+  // later via webhook token), so without this an empty label would sail
+  // through and create a real, blank, un-attributable account.
+  if (!label || !label.trim()) {
+    throw new Error('label is required.');
+  }
 
   const resolvedRole = role || 'both';
   const resolvedIsPublic = Boolean(isPublic);

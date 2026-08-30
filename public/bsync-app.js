@@ -547,6 +547,11 @@
       const environment = document.getElementById('bulkEnvironment_' + idSuffix).value;
       const balance = Number(document.getElementById('bulkBalance_' + idSuffix).value) || 0;
 
+      if (!label) {
+        results.push({ ok: false, label: platform + ' row', error: 'Skipped - enter a label/account number first.' });
+        continue;
+      }
+
       let credentials;
       if (platform === 'tradelocker') {
         credentials = {
