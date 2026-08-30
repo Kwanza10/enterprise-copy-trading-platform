@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS broker_accounts (
 -- log line in the EA's Experts tab, so this is the only positive signal.
 ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
+-- A "Copy Me" master account: meant to be followed by many people rather
+-- than just the owner's own accounts, so it gets its own (higher) follower
+-- cap - see settingsService.js / followerLimitService.js.
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS idx_broker_accounts_user_id ON broker_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_broker_accounts_webhook_token_hash ON broker_accounts(webhook_token_hash);
 CREATE INDEX IF NOT EXISTS idx_broker_accounts_platform_role ON broker_accounts(platform, role);
@@ -153,6 +158,15 @@ CREATE TABLE IF NOT EXISTS trade_copy_relationships (
 );
 
 CREATE INDEX IF NOT EXISTS idx_copy_relationships_master ON trade_copy_relationships(master_account_id);
+
+-- Single-row settings store, admin-editable via PUT /api/settings/follower-limits
+-- (see followerLimitService.js) instead of being hardcoded, so the caps below
+-- can be tuned without a redeploy.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key VARCHAR(60) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 CREATE INDEX IF NOT EXISTS idx_copy_relationships_follower_user ON trade_copy_relationships(follower_user_id);
 
 CREATE TABLE IF NOT EXISTS copy_trade_events (

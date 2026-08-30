@@ -1,6 +1,14 @@
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 
+function requireAdmin(req, res, next) {
+  const email = (req.user && req.user.email || '').toLowerCase();
+  if (!email || !env.adminEmails.includes(email)) {
+    return res.status(403).json({ error: 'Admin access required.' });
+  }
+  return next();
+}
+
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -18,4 +26,4 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+module.exports = { requireAuth, requireAdmin };

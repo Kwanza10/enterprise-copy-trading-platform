@@ -125,6 +125,7 @@
     el.authMessage.className = 'message success';
     showDashboard();
     startAutoRefresh();
+    loadFollowerLimits();
     if (reopenConnectionModalAfterLogin) {
       reopenConnectionModalAfterLogin = false;
       document.getElementById('connectionModalOverlay').classList.add('open');
@@ -238,6 +239,14 @@
   let connPlatform = null;
   let connStep = 1;
 
+  // The "Copy Me" (public) toggle only makes sense for an account that can
+  // act as a master - a pure follower can't have followers of its own.
+  function updateConnIsPublicVisibility() {
+    const role = document.getElementById('connRole').value;
+    document.getElementById('connIsPublicField').style.display = role === 'follower' ? 'none' : '';
+  }
+  document.getElementById('connRole').addEventListener('change', updateConnIsPublicVisibility);
+
   function resetConnectionModal() {
     connPlatform = null;
     document.querySelectorAll('.platform-card').forEach((c) => c.classList.remove('selected'));
@@ -248,6 +257,8 @@
     document.getElementById('connTlServer').value = '';
     document.getElementById('connTlAccountId').value = '';
     document.getElementById('connTlAccNum').value = '';
+    document.getElementById('connIsPublic').checked = false;
+    updateConnIsPublicVisibility();
     document.getElementById('connResultMessage').textContent = '';
     document.getElementById('connResultMessage').className = 'message';
     document.getElementById('connResultCallout').innerHTML = '';
@@ -323,6 +334,7 @@
 
     if (n === 2) {
       document.getElementById('connTlFields').style.display = connPlatform === 'tradelocker' ? 'grid' : 'none';
+      updateConnIsPublicVisibility();
     }
     if (n === 3) {
       document.getElementById('connTlAccountPicker').style.display = 'none';
@@ -412,6 +424,7 @@
     const environment = document.getElementById('connEnvironment').value;
     const label = document.getElementById('connLabel').value.trim();
     const balance = Number(document.getElementById('connBalance').value) || 0;
+    const isPublic = document.getElementById('connIsPublic').checked;
 
     let credentials;
     if (connPlatform === 'tradelocker') {
@@ -431,7 +444,7 @@
     connectBtn.textContent = 'Connecting...';
 
     try {
-      const data = await api('POST', '/api/broker-accounts', { platform: connPlatform, role, label, environment, credentials, balance });
+      const data = await api('POST', '/api/broker-accounts', { platform: connPlatform, role, label, environment, credentials, balance, isPublic });
       document.getElementById('connResultMessage').className = 'message success';
       document.getElementById('connResultMessage').textContent = 'Connected.';
       document.getElementById('connResultCallout').innerHTML =
@@ -675,7 +688,8 @@
           '<tr><td>' +
           '<input readonly value="' + a.id + '" onclick="this.select()" ' +
           'style="width:100%;font-family:monospace;font-size:11px;background:#0e1420;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;" /></td>' +
-          '<td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role + '</td><td>' + a.environment +
+          '<td>' + (a.label || '-') + '</td><td>' + a.platform + '</td><td>' + a.role +
+          (a.isPublic ? ' <span class="badge" style="background:var(--accent);">Copy Me</span>' : '') + '</td><td>' + a.environment +
           '</td><td>$' + a.balance.toFixed(2) + '</td><td>' + badge(a.status) + '</td><td>' + lastSeenLabel(a.lastSeenAt) + '</td>' +
           '<td><button class="small" onclick="regenerateWebhookToken(\'' + a.id + '\')">Regenerate token</button> ' +
           '<button class="small danger" onclick="removeAccount(\'' + a.id + '\')">Remove</button></td></tr>'
@@ -685,6 +699,45 @@
       el.accountsContainer.textContent = 'Failed to load accounts: ' + err.message;
     }
   }
+
+  // /api/settings/follower-limits 403s for anyone but the app owner (see
+  // requireAdmin in middleware/auth.js) - that's the only signal used to
+  // decide whether to show this panel at all, so a regular user never even
+  // knows it exists. Loaded once at login, not on every 5s refresh tick, so
+  // it doesn't stomp on an admin's in-progress edits.
+  async function loadFollowerLimits() {
+    try {
+      const data = await api('GET', '/api/settings/follower-limits');
+      document.getElementById('adminFollowerLimitsPanel').style.display = '';
+      document.getElementById('limitsEnabled').checked = data.limits.enabled;
+      document.getElementById('limitMaxPrivateMasters').value = data.limits.maxPrivateMastersPerUser;
+      document.getElementById('limitMaxFollowersPrivate').value = data.limits.maxFollowersPerPrivateMaster;
+      document.getElementById('limitMaxFollowersPublic').value = data.limits.maxFollowersPerPublicMaster;
+    } catch (err) {
+      document.getElementById('adminFollowerLimitsPanel').style.display = 'none';
+    }
+  }
+
+  document.getElementById('saveLimitsBtn').addEventListener('click', async () => {
+    const msg = document.getElementById('limitsMessage');
+    try {
+      const data = await api('PUT', '/api/settings/follower-limits', {
+        enabled: document.getElementById('limitsEnabled').checked,
+        maxPrivateMastersPerUser: Number(document.getElementById('limitMaxPrivateMasters').value),
+        maxFollowersPerPrivateMaster: Number(document.getElementById('limitMaxFollowersPrivate').value),
+        maxFollowersPerPublicMaster: Number(document.getElementById('limitMaxFollowersPublic').value)
+      });
+      document.getElementById('limitsEnabled').checked = data.limits.enabled;
+      document.getElementById('limitMaxPrivateMasters').value = data.limits.maxPrivateMastersPerUser;
+      document.getElementById('limitMaxFollowersPrivate').value = data.limits.maxFollowersPerPrivateMaster;
+      document.getElementById('limitMaxFollowersPublic').value = data.limits.maxFollowersPerPublicMaster;
+      msg.className = 'message success';
+      msg.textContent = 'Saved.';
+    } catch (err) {
+      msg.className = 'message error';
+      msg.textContent = err.message;
+    }
+  });
 
   async function approveRelationship(id, status) {
     try {

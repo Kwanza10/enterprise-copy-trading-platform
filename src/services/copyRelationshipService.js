@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../lib/db');
+const followerLimitService = require('./followerLimitService');
 
 const RISK_MODES = ['fixed_lot', 'percent_of_master', 'percent_of_balance'];
 
@@ -27,13 +28,31 @@ async function createRelationship({ masterAccountId, followerAccountId, follower
     throw new Error('riskValue must be a positive number.');
   }
 
-  const masterAccount = await db.query(`SELECT user_id FROM broker_accounts WHERE id = $1`, [masterAccountId]);
+  const masterAccount = await db.query(`SELECT user_id, is_public FROM broker_accounts WHERE id = $1`, [masterAccountId]);
   if (masterAccount.rows.length === 0) {
     throw new Error('masterAccountId does not exist.');
   }
 
   const isSelfCopy = masterAccount.rows[0].user_id === followerUserId;
   const status = isSelfCopy ? 'active' : 'pending_approval';
+
+  const limits = await followerLimitService.getLimits();
+  if (limits.enabled) {
+    const isPublic = masterAccount.rows[0].is_public;
+    const cap = isPublic ? limits.maxFollowersPerPublicMaster : limits.maxFollowersPerPrivateMaster;
+    const countResult = await db.query(
+      `SELECT COUNT(*) FROM trade_copy_relationships
+       WHERE master_account_id = $1 AND status IN ('pending_approval', 'active')`,
+      [masterAccountId]
+    );
+    const count = Number(countResult.rows[0].count);
+    if (count >= cap) {
+      throw new Error(
+        `This master account already has ${count} follower(s) linked, the limit is ${cap}` +
+        (isPublic ? ' for a public "Copy Me" account.' : ' for a private master account.')
+      );
+    }
+  }
 
   const id = crypto.randomUUID();
   const result = await db.query(

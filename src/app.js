@@ -31,6 +31,7 @@ const symbolMappingRoutes = require('./routes/symbol-mappings');
 const webhookRoutes = require('./routes/webhook');
 const mtBridgeRoutes = require('./routes/mtBridge');
 const tradeFeedRoutes = require('./routes/trade-feed');
+const settingsRoutes = require('./routes/settings');
 const tradeQueue = require('./lib/tradeQueue');
 const copyEngine = require('./services/copyEngine');
 const symbolMappingService = require('./services/symbolMappingService');
@@ -141,6 +142,7 @@ app.use('/api/symbol-mappings', symbolMappingRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/bridge', mtBridgeRoutes);
 app.use('/api/trade-feed', tradeFeedRoutes);
+app.use('/api/settings', settingsRoutes);
 
 const wsServer = createWebSocketServer(server);
 

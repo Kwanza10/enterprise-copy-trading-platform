@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../lib/db');
 const cipher = require('../lib/credentialCipher');
+const followerLimitService = require('./followerLimitService');
 
 const PLATFORMS = ['mt4', 'mt5', 'tradelocker'];
 const ROLES = ['master', 'follower', 'both'];
@@ -20,13 +21,37 @@ function toPublicDTO(row) {
     environment: row.environment,
     balance: Number(row.balance),
     status: row.status,
+    isPublic: row.is_public,
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-async function createBrokerAccount({ userId, platform, role, label, environment, credentials, balance }) {
+// A private (non-"Copy Me") master account is capped at maxPrivateMastersPerUser
+// - the actual follower-count cap per master is enforced separately in
+// copyRelationshipService, since that's where followers actually attach.
+// A public ("Copy Me") master isn't counted against this cap - it's meant to
+// be created deliberately, not accidentally used up as one of the private slots.
+async function assertPrivateMasterSlotAvailable(userId) {
+  const limits = await followerLimitService.getLimits();
+  if (!limits.enabled) return;
+
+  const result = await db.query(
+    `SELECT COUNT(*) FROM broker_accounts
+     WHERE user_id = $1 AND role IN ('master', 'both') AND is_public = FALSE AND status = 'active'`,
+    [userId]
+  );
+  const count = Number(result.rows[0].count);
+  if (count >= limits.maxPrivateMastersPerUser) {
+    throw new Error(
+      `You already have ${count} private master account(s), the limit is ${limits.maxPrivateMastersPerUser}. ` +
+      `Mark a new one as a public "Copy Me" account instead, or remove an existing master first.`
+    );
+  }
+}
+
+async function createBrokerAccount({ userId, platform, role, label, environment, credentials, balance, isPublic }) {
   if (!PLATFORMS.includes(platform)) {
     throw new Error(`platform must be one of: ${PLATFORMS.join(', ')}`);
   }
@@ -40,25 +65,32 @@ async function createBrokerAccount({ userId, platform, role, label, environment,
     throw new Error('credentials object is required.');
   }
 
+  const resolvedRole = role || 'both';
+  const resolvedIsPublic = Boolean(isPublic);
+  if (['master', 'both'].includes(resolvedRole) && !resolvedIsPublic) {
+    await assertPrivateMasterSlotAvailable(userId);
+  }
+
   const id = crypto.randomUUID();
   const webhookToken = crypto.randomBytes(24).toString('hex');
   const credentialsEncrypted = cipher.encrypt(credentials);
 
   const result = await db.query(
     `INSERT INTO broker_accounts
-       (id, user_id, platform, role, label, credentials_encrypted, webhook_token_hash, environment, balance, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
+       (id, user_id, platform, role, label, credentials_encrypted, webhook_token_hash, environment, balance, status, is_public)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
      RETURNING *`,
     [
       id,
       userId,
       platform,
-      role || 'both',
+      resolvedRole,
       label || null,
       credentialsEncrypted,
       hashToken(webhookToken),
       environment || 'demo',
-      balance || 0
+      balance || 0,
+      resolvedIsPublic
     ]
   );
 

@@ -7,6 +7,14 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  // Who can view/edit the admin-only follower-limit settings (see
+  // requireAdmin in middleware/auth.js). Defaults to the app owner's own
+  // login email so this works out of the box; override with a
+  // comma-separated ADMIN_EMAILS env var to add more.
+  adminEmails: (process.env.ADMIN_EMAILS || 'kwanzagreen2@gmail.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
   credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY || 'dev-credential-key-change-me',
   tradeLocker: {
     liveBaseUrl: process.env.TL_BASE_URL || 'https://live.tradelocker.com/backend-api',

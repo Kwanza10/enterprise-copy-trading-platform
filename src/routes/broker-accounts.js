@@ -38,7 +38,7 @@ router.post('/tradelocker/discover-accounts', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { platform, role, label, environment, credentials, balance } = req.body;
+  const { platform, role, label, environment, credentials, balance, isPublic } = req.body;
 
   if (!credentials || typeof credentials !== 'object') {
     return res.status(400).json({ error: 'credentials object is required.' });
@@ -71,7 +71,8 @@ router.post('/', async (req, res) => {
       label,
       environment,
       credentials: resolvedCredentials,
-      balance
+      balance,
+      isPublic
     });
 
     // webhookToken is only ever shown here, at creation time - it's stored

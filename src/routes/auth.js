@@ -11,7 +11,7 @@ const router = express.Router();
 const googleClient = env.googleClientId ? new OAuth2Client(env.googleClientId) : null;
 
 function issueToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role }, env.jwtSecret, { expiresIn: '8h' });
+  return jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.jwtSecret, { expiresIn: '8h' });
 }
 
 // Dual-writes into Postgres alongside the in-memory Map, same as /register -
